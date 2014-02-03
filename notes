@@ -1,0 +1,21 @@
+minecraft-controller
+
+--------------------------------------------------------------------------------
+Server Output:
+
+[17:28:08] [Server thread/INFO]: Starting minecraft server version 1.7.4
+[17:28:08] [Server thread/INFO]: Loading properties
+[17:28:08] [Server thread/INFO]: Default game type: SURVIVAL
+[17:28:08] [Server thread/INFO]: Generating keypair
+[17:28:08] [Server thread/INFO]: Starting Minecraft server on *:44444
+[17:28:08] [Server thread/INFO]: Preparing level "world"
+[17:28:08] [Server thread/INFO]: Preparing start region for level 0
+[17:28:09] [Server thread/INFO]: Preparing spawn area: 40%
+[17:28:10] [Server thread/INFO]: Done (1.915s)! For help, type "help" or "?"
+[17:28:53] [User Authenticator #1/INFO]: UUID of player DatFrogKing is ebd5a42b74a8434bbad8b56c88375dbf
+[17:28:53] [Server thread/INFO]: DatFrogKing[/150.252.108.12:58133] logged in with entity id 76 at (-1999.6095715041984, 65.0, 1611.0657001381044)
+[17:28:53] [Server thread/INFO]: DatFrogKing joined the game
+
+
+
+--------------------------------------------------------------------------------
