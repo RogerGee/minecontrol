@@ -1,6 +1,6 @@
+test/
 obj/
 dobj/
 minecraft-controller
 minecraft-controller-debug
-test.cpp
-test
+

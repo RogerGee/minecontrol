@@ -19,3 +19,43 @@ Server Output:
 
 
 --------------------------------------------------------------------------------
+
+Server Prop Keys w/ defaults:
+- = cannot change OR set
++ = can initially set
+m = can change (modify) and initially set
+
+- generator-settings=
+- op-permission-level=3
+- level-name=world
+- enable-query=false
+- allow-flight=false
+- announce-player-achievements=true
+- server-port=44444
++ level-type=DEFAULT
+- enable-rcon=false
+- level-seed=
+m force-gamemode=false
+- server-ip=
+- max-build-height=256
+m spawn-npcs=true
+m white-list=false
+m spawn-animals=true
+m hardcore=false
+- snooper-enabled=false
+- online-mode=true
+- resource-pack=
+m pvp=true
+m difficulty=1
+- enable-command-block=false
+m gamemode=0
+- player-idle-timeout=20
++ max-players=20
+m spawn-monsters=true
+m generate-structures=true
+- view-distance=10
++ motd=A Minecraft Server
+
+--------------------------------------------------------------------------------
+--help text:
+

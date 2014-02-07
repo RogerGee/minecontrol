@@ -5,13 +5,25 @@
 
 namespace minecraft_controller
 {
+    class domain_socket_error { };
+
     class domain_socket : public rtypes::io_device
     {
     public:
+        // represents the result of the accept
+        // operation on a domain socket
+        enum domain_socket_accept_condition
+        {
+            domain_socket_nodevice, // the domain socket does not exist yet
+            domain_socket_accepted, // a connection was accepted by the domain socket
+            domain_socket_interrupted // accept was interrupted; the domain socket may have been shutdown
+        };
+
         domain_socket();
 
-        void accept(domain_socket& dsnew); // server
+        domain_socket_accept_condition accept(domain_socket& dsnew); // server
         bool connect(const char* path); // client
+        bool shutdown();
 
         const char* get_path() const
         { return _path; }
@@ -24,13 +36,11 @@ namespace minecraft_controller
         virtual void _closeEvent(rtypes::io_access_flag);
     };
 
-    class domain_socket_stream : public rtypes::rstream,
-                                 public rtypes::stream_device<domain_socket>
+    class domain_socket_stream_device : public rtypes::stream_device<domain_socket>
     {
-    public:
-        domain_socket_stream();
-        domain_socket_stream(domain_socket& device);
-        ~domain_socket_stream();
+    protected:
+        domain_socket_stream_device();
+        ~domain_socket_stream_device();
     private:
         virtual void _clearDevice();
         virtual bool _openDevice(const char*);
@@ -38,6 +48,22 @@ namespace minecraft_controller
 
         virtual bool _inDevice() const;
         virtual void _outDevice();
+    };
+
+    class domain_socket_stream : public rtypes::rstream,
+                                 public domain_socket_stream_device
+    {
+    public:
+        domain_socket_stream();
+        domain_socket_stream(domain_socket& device);
+    };
+
+    class domain_socket_binary_stream : public rtypes::rbinstream,
+                                        public domain_socket_stream_device
+    {
+    public:
+        domain_socket_binary_stream();
+        domain_socket_binary_stream(domain_socket& device);
     };
 }
 

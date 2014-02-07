@@ -7,42 +7,54 @@
 ifeq ($(MAKECMDGOALS),debug)
 PROGRAM = minecraft-controller-debug
 COMPILE = g++ -g -c -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-unused-variable -pedantic-errors --std=gnu++0x
-OBJECT_FOLDER = dobj/
+OBJECT_DIRECTORY = dobj/
 else
-PROGRAM = minecraft-controller-debug
+PROGRAM = minecraft-controller
 COMPILE = g++ -c -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-unused-variable -pedantic-errors --std=gnu++0x
-OBJECT_FOLDER = obj/
+OBJECT_DIRECTORY = obj/
 endif
 LINK = g++
-LIBRARY = -lrlibrary
+LIBRARY = -lrlibrary -pthread -lcrypt
 OUT = -o 
 
 # dependencies
+PIPE_H = pipe.h
 DOMAIN_SOCKET_H = domain-socket.h
+MINECRAFT_SERVER_H = minecraft-server.h $(PIPE_H)
+MINECRAFT_SERVER_PROPERTIES_H = minecraft-server-properties.h
 
 # object code
-OBJECTS = minecraft-controller.o domain-socket.o
+OBJECTS = minecraft-controller.o minecraft-server.o minecraft-server-properties.o domain-socket.o pipe.o 
 
 # make objects relative to object directory
-OBJECTS := $(addprefix $(OBJECT_FOLDER),$(OBJECTS))
+OBJECTS := $(addprefix $(OBJECT_DIRECTORY),$(OBJECTS))
 
-all: $(OBJECT_FOLDER) $(PROGRAM)
+all: $(OBJECT_DIRECTORY) $(PROGRAM)
 #make -C client
 
-debug: $(OBJECT_FOLDER) $(PROGRAM)
+debug: $(OBJECT_DIRECTORY) $(PROGRAM)
 #make -C client
 
 $(PROGRAM): $(OBJECTS)
 	$(LINK) $(OUT)$(PROGRAM) $(OBJECTS) $(LIBRARY)
 
-$(OBJECT_FOLDER)minecraft-controller.o: minecraft-controller.cpp
-	$(COMPILE) $(OUT)$(OBJECT_FOLDER)minecraft-controller.o minecraft-controller.cpp
+$(OBJECT_DIRECTORY)minecraft-controller.o: minecraft-controller.cpp $(DOMAIN_SOCKET_H) $(MINECRAFT_SERVER_H)
+	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)minecraft-controller.o minecraft-controller.cpp
 
-$(OBJECT_FOLDER)domain-socket.o: domain-socket.cpp $(DOMAIN_SOCKET_H)
-	$(COMPILE) $(OUT)$(OBJECT_FOLDER)domain-socket.o domain-socket.cpp
+$(OBJECT_DIRECTORY)minecraft-server.o: minecraft-server.cpp $(MINECRAFT_SERVER_H)
+	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)minecraft-server.o minecraft-server.cpp
 
-$(OBJECT_FOLDER):
-	mkdir $(OBJECT_FOLDER)
+$(OBJECT_DIRECTORY)minecraft-server-properties.o: minecraft-server-properties.cpp $(MINECRAFT_SERVER_PROPERTIES_H)
+	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)minecraft-server-properties.o minecraft-server-properties.cpp
+
+$(OBJECT_DIRECTORY)domain-socket.o: domain-socket.cpp $(DOMAIN_SOCKET_H)
+	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)domain-socket.o domain-socket.cpp
+
+$(OBJECT_DIRECTORY)pipe.o: pipe.cpp $(PIPE_H)
+	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)pipe.o pipe.cpp
+
+$(OBJECT_DIRECTORY):
+	mkdir $(OBJECT_DIRECTORY)
 
 clean:
 	if [ -d obj ]; then rm -r --verbose obj; fi;

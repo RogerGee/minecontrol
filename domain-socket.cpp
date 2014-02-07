@@ -1,10 +1,11 @@
 // domain-socket.cpp
-#include "domain-socket.h"
 #include "rlibrary/rstdio.h"
-#include <unistd.h>
+#include "domain-socket.h"
 #include <sys/types.h>
 #include <sys/un.h>
 #include <sys/socket.h>
+#include <unistd.h>
+#include <errno.h>
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -12,7 +13,7 @@ domain_socket::domain_socket()
     : _path(NULL)
 {
 }
-void domain_socket::accept(domain_socket& dsnew)
+domain_socket::domain_socket_accept_condition domain_socket::accept(domain_socket& dsnew)
 {
     io_resource* pres;
     dsnew.close();
@@ -27,10 +28,15 @@ void domain_socket::accept(domain_socket& dsnew)
             dsnew._input->assign(fd);
             dsnew._output->assign(fd);
             dsnew._lastOp = no_operation;
-            return;
+            return domain_socket_accepted;
         }
+        else if (errno==EINTR || errno==ECONNABORTED || errno==EBADF)
+            return domain_socket_interrupted;
+        else
+            throw domain_socket_error();
     }
     dsnew._lastOp = no_device;
+    return domain_socket_nodevice;
 }
 bool domain_socket::connect(const char* path)
 {
@@ -52,6 +58,18 @@ bool domain_socket::connect(const char* path)
     if (::connect(pres->interpret_as<int>(),(sockaddr*)&addr,sizeof(sockaddr_un)) == -1)
         return false;
     return true;
+}
+bool domain_socket::shutdown()
+{
+    io_resource* pres;
+    pres = _getValidContext();
+    if (pres != NULL)
+    {
+        if (::shutdown(pres->interpret_as<int>(),SHUT_RDWR) == -1)
+            return false;
+        return true;
+    }
+    return false;
 }
 void domain_socket::_openEvent(const char* deviceID,io_access_flag mode,void**,dword)
 {
@@ -101,6 +119,8 @@ void domain_socket::_openEvent(const char* deviceID,io_access_flag mode,void**,d
             _output->assign(fd);
         }
     }
+    else
+        throw domain_socket_error();
 }
 void domain_socket::_readAll(generic_string& sbuf) const
 {
@@ -117,31 +137,27 @@ void domain_socket::_closeEvent(io_access_flag)
     _path = NULL;
 }
 
-domain_socket_stream::domain_socket_stream()
+domain_socket_stream_device::domain_socket_stream_device()
 {
 }
-domain_socket_stream::domain_socket_stream(domain_socket& domain)
-{
-    open(domain);
-}
-domain_socket_stream::~domain_socket_stream()
+domain_socket_stream_device::~domain_socket_stream_device()
 {
     if ( !_bufOut.is_empty() )
-        flush_output();
+        _outDevice();
 }
-void domain_socket_stream::_clearDevice()
+void domain_socket_stream_device::_clearDevice()
 {
 }
-bool domain_socket_stream::_openDevice(const char* DeviceID)
+bool domain_socket_stream_device::_openDevice(const char* DeviceID)
 {
     _device->open(DeviceID);
     return _device->get_last_operation_status() == no_operation;
 }
-void domain_socket_stream::_closeDevice()
+void domain_socket_stream_device::_closeDevice()
 {
     _device->close();
 }
-bool domain_socket_stream::_inDevice() const
+bool domain_socket_stream_device::_inDevice() const
 {
     char buffer[4096];
     _device->read(buffer,4096);
@@ -152,9 +168,25 @@ bool domain_socket_stream::_inDevice() const
     }
     return false;
 }
-void domain_socket_stream::_outDevice()
+void domain_socket_stream_device::_outDevice()
 {
     // write the entire buffer
     _device->write(&_bufOut.peek(),_bufOut.size());
     _bufOut.clear();
+}
+
+domain_socket_stream::domain_socket_stream()
+{
+}
+domain_socket_stream::domain_socket_stream(domain_socket& domain)
+{
+    open(domain);
+}
+
+domain_socket_binary_stream::domain_socket_binary_stream()
+{
+}
+domain_socket_binary_stream::domain_socket_binary_stream(domain_socket& domain)
+{
+    open(domain);
 }
