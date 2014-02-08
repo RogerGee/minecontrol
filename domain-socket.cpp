@@ -9,8 +9,9 @@
 using namespace rtypes;
 using namespace minecraft_controller;
 
+/*static*/ qword domain_socket::_idTop = 1;
 domain_socket::domain_socket()
-    : _path(NULL)
+    : _path(NULL), _id(0)
 {
 }
 domain_socket::domain_socket_accept_condition domain_socket::accept(domain_socket& dsnew)
@@ -28,6 +29,8 @@ domain_socket::domain_socket_accept_condition domain_socket::accept(domain_socke
             dsnew._input->assign(fd);
             dsnew._output->assign(fd);
             dsnew._lastOp = no_operation;
+            // assign a unique id to represent the connection
+            dsnew._id = _idTop++;
             return domain_socket_accepted;
         }
         else if (errno==EINTR || errno==ECONNABORTED || errno==EBADF)
@@ -135,6 +138,7 @@ void domain_socket::_readAll(generic_string& sbuf) const
 void domain_socket::_closeEvent(io_access_flag)
 {
     _path = NULL;
+    _id = 0;
 }
 
 domain_socket_stream_device::domain_socket_stream_device()

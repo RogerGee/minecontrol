@@ -1,0 +1,151 @@
+void* client_thread(void* psocket)
+{
+    // detach this thread
+    if (::pthread_detach( ::pthread_self() ) == -1)
+        throw minecraft_controller_error();
+    domain_socket* pclient = reinterpret_cast<domain_socket*>(psocket);
+    domain_socket_stream stream(*pclient);
+    while (!globalShutdown)
+    {
+        str line;
+        stream.getline(line);
+        if ( !stream.get_input_success() )
+        {
+            if (pclient->get_last_operation_status() == no_input) // client disconnect
+            {
+                operation_log("client disconnected");
+                break;
+            }
+            else if (pclient->get_last_operation_status() == bad_read)
+            {
+                error_log("bad read from client socket; assuming disconnect");
+                break;
+            }
+        }
+        str s;
+        rstringstream ss(line);
+        ss >> s;
+        for (size_type i = 0;i<s.length();i++) // make lowercase
+            if (s[i]>='A' && s[i]<='Z')
+                s[i] -= 'A', s[i] += 'a';
+        if (s == "start")
+        {
+            ss >> s;
+            if (s.length() == 0)
+                stream << "error Expected name argument" << endline;
+            else
+            {
+                operation_log("processing client request to run mcraft server");
+                pthread_t tid;
+                minecraft_server_info* psrvinfo = new minecraft_server_info;
+                if (pthread_create(&tid,NULL,&server_thread,psvrinfo) != 0)
+                    throw minecraft_controller_error();
+            }
+        }
+        else if (s == "status")
+        {
+
+        }
+        else if (s == "stop")
+        {
+
+        }
+    }
+    // remove the client connection from the list of connected clients
+    size_type i = 0;
+    while (i<MAX_CLIENTS && clients[i]!=pclient)
+        ++i;
+    if (i < MAX_CLIENTS)
+        clients[i] = NULL;
+    // delete the memory used to hold psocket (do it on pclient so that the destructor is called)
+    delete pclient;
+    return NULL;
+}
+
+void* server_thread(void* pinfo)
+{
+    // detach this thread
+    if (::pthread_detach( ::pthread_self() ) == -1)
+        throw minecraft_controller_error();
+    // create new server based on info passed to this thread
+    size_type i;
+    minecraft_server_info* pServerInfo = reinterpret_cast<minecraft_server_info*>(pinfo);
+    // see if there is enough room to add this server to the global list
+    i = 0;
+    while (i<MAX_SERVERS && servers[i]!=NULL)
+        ++i;
+    if (i >= MAX_SERVERS)
+    {
+        operation_log("a server start request was cancelled due to server overload");
+        delete pServerInfo;
+        return NULL;
+    }
+    try {
+        minecraft_server server(*pServerInfo);
+        // this context is responsible for deleting server info
+        delete pServerInfo;
+        pServerInfo = NULL;
+        // start the server and check on it periodically
+        minecraft_server::minecraft_server_exit_condition exitCondition;
+        server.begin();
+        servers[i] = &server;
+        operation_log("started mcraft server");
+        // register the server with the global list for this module
+        while (!globalShutdown && server.is_running())
+        {
+
+            ::sleep(1);
+        }
+        // end the server and get the termination status
+        exitCondition = server.end();
+        servers[i] = NULL;
+        if (exitCondition == minecraft_server::mcraft_exit_ingame)
+            operation_log("mcraft server closed by in game event");
+        else if (exitCondition == minecraft_server::mcraft_exit_authority_request)
+            operation_log("mcraft server closed by authoritative event");
+        else if (exitCondition == minecraft_server::mcraft_exit_authority_killed)
+            operation_log("mcraft server closed by authoritative kill signal");
+        else if (exitCondition == minecraft_server::mcraft_exit_timeout_request)
+            operation_log("mcraft server closed by timeout event");
+        else if (exitCondition == minecraft_server::mcraft_exit_timeout_killed)
+            operation_log("mcraft server closed by timeout kill signal");
+        else if (exitCondition == minecraft_server::mcraft_exit_request)
+            operation_log("mcraft server closed by request");
+        else if (exitCondition == minecraft_server::mcraft_exit_killed)
+            operation_log("mcraft server closed by kill signal");
+        else
+            operation_log("mcraft server closed by unknown event (should this happen?)");
+    }
+    catch (minecraft_server_error_name_exists) // can't create new server
+    {
+        error_log("client attempted to create new server using name that already exists");
+        if (pServerInfo != NULL)
+            delete pServerInfo;
+        return NULL;
+    }
+    catch (minecraft_server_error_execution) // can't execute server
+    {
+        error_log("minecraft server could not be executed");
+        if (pServerInfo != NULL)
+            delete pServerInfo;
+        return NULL;
+    }
+    return pinfo;
+}
+
+
+
+
+
+void minecraft_controller::operation_log(const char* pmessage)
+{
+    stdConsole << programName 
+               << '[' << ::getpid() << "]: " 
+               << pmessage << endline;
+}
+void minecraft_controller::error_log(const char* pmessage)
+{
+    stdConsole << err;
+    operation_log(pmessage);
+    stdConsole << out;
+}

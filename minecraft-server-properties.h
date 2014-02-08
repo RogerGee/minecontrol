@@ -1,7 +1,8 @@
 // minecraft-server-properties.h
 #ifndef MINECRAFT_SERVER_PROPERTIES_H
 #define MINECRAFT_SERVER_PROPERTIES_H
-#include "rlibrary/rstream.h"
+#include <string.h>
+#include "rlibrary/rstringstream.h" // gets rstream
 #include "rlibrary/rdynarray.h"
 
 namespace minecraft_controller
@@ -19,15 +20,17 @@ namespace minecraft_controller
         const char* get_key() const
         { return _getKeyName(); }
         const T& get_value() const
-        { return value; }
+        { return _value; }
 
-        void set_value(const T&);
-    private:
+        // returns false if the conversion failed
+        bool set_value(const rtypes::str&);
+    protected:
         T _value;
         bool _isNull; // if true, property field becomes: Key=
 
+        virtual bool _readValue(rtypes::rstream&);
         virtual void _putValue(rtypes::rstream&) const;
-        virtual const char* _getKeyName() const = 0;
+        virtual const char* _getKeyName() const = 0; // (must be lower-case)
     };
     //
 
@@ -98,7 +101,7 @@ namespace minecraft_controller
         { return "enable-rcon"; }
     };
 
-    struct mcraft_enable_command_block : boolean_prop(false) {}
+    struct mcraft_enable_command_block : boolean_prop
     {
         mcraft_enable_command_block(): boolean_prop(false) {}
 
@@ -183,6 +186,7 @@ namespace minecraft_controller
 
         mcraft_level_type(): numeric_prop(mcraft_level_default) {}
     private:
+        virtual bool _readValue(rtypes::rstream&);
         virtual void _putValue(rtypes::rstream&) const;
         virtual const char* _getKeyName() const
         { return "level-type"; }
@@ -353,57 +357,61 @@ namespace minecraft_controller
 
     // property list type
     template<typename T>
-    class minecraft_property_list
+    class minecraft_property_generic_list
     {
-        minecraft_property_list();
-        // perform template specializations for
-        // each of the property types: int, rtypes::str, and bool
+    public:
+        minecraft_server_property<T>* lookup(const char* propName)
+        { return reinterpret_cast<minecraft_server_property<T>*> (_lookup(propName)); }
+        const minecraft_server_property<T>* lookup(const char* propName) const
+        { return reinterpret_cast<const minecraft_server_property<T>*> (_lookup(propName)); }
 
-        ~minecraft_property_list();
+        minecraft_server_property<T>* operator [](rtypes::size_type i)
+        { return reinterpret_cast<minecraft_server_property<T>*>(_list[i]); }
+        const minecraft_server_property<T>* operator [](rtypes::size_type i) const
+        { return reinterpret_cast<minecraft_server_property<T>*>(_list[i]); }
 
-        minecraft_server_property<T>* operator [](const char*);
-        const minecraft_server_property<T>* operator [](const char*) const;
+        rtypes::size_type size() const
+        { return _list.size(); }
+    protected:
+        ~minecraft_property_generic_list();
+
+        void* _lookup(const char*);
+        const void* _lookup(const char*) const;
+
+        void _pushBack(minecraft_server_property<T>* pitem) // type-safe insertion
+        { _list.push_back(pitem); }
     private:
-        rtypes::dynamic_array< minecraft_server_property<T> > _list;
+        rtypes::dynamic_array<void*> _list;
+    };
+
+    class minecraft_boolean_property_list : public minecraft_property_generic_list<bool>
+    {
+    public:
+        minecraft_boolean_property_list();
+    };
+
+    class minecraft_numeric_property_list : public minecraft_property_generic_list<int>
+    {
+    public:
+        minecraft_numeric_property_list();
+    };
+
+    class minecraft_string_property_list : public minecraft_property_generic_list<rtypes::str>
+    {
+    public:
+        minecraft_string_property_list();
+    };
+
+    struct minecraft_server_property_list
+    {
+        minecraft_boolean_property_list booleanProps;
+        minecraft_numeric_property_list numericProps;
+        minecraft_string_property_list stringProps;
     };
     //
 }
 
-// minecraft_server_property out-of-line implementation
-template<typename T>
-minecraft_controller::minecraft_server_property<T>::minecraft_server_property()
-{
-    _isNull = true;
-}
-template<typename T>
-minecraft_controller::minecraft_server_property<T>::minecraft_server_property(const T& defaultValue)
-    : _value(defaultValue)
-{
-    _isNull = false;
-}
-template<typename T>
-minecraft_controller::minecraft_server_property<T>::~minecraft_server_property()
-{
-}
-template<typename T>
-void minecraft_controller::minecraft_server_property<T>::put(rtypes::rstream& stream) const
-{
-    stream << _getKeyName() << '=';
-    if (!_isNull)
-        _putValue(stream);
-}
-template<typename T>
-void minecraft_controller::minecraft_server_property<T>::set_value(const T& value)
-{
-    // since the user intentionally is setting the value,
-    // then it shouldn't be left null
-    _isNull = false;
-    _value = value;
-}
-template<typename T>
-void minecraft_controller::minecraft_server_property<T>::_putValue(rtypes::rstream& stream) const
-{
-    stream << value;
-}
+// include out-of-line implementation
+#include "minecraft-server-properties.tcc"
 
 #endif

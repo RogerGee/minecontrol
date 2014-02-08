@@ -30,5 +30,7 @@ int main(int,const char* argv[])
             break;
 
         stream << line << endline;
+        stream.getline(line);
+        stdConsole << "The server says: " << line << endline;
     }
 }

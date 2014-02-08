@@ -24,7 +24,6 @@ void pipe::standard_duplicate(bool includeError)
                     throw pipe_error();
             // make input in this pipe object not exist
             close_input();
-            ::close(_fdOpenRead);
         }
         if (_fdOpenWrite != -1)
         {
@@ -36,10 +35,8 @@ void pipe::standard_duplicate(bool includeError)
                     throw pipe_error();
             // make output in this pipe object not exist
             close_output();
-            ::close(_fdOpenWrite);
         }
     }
-    
 }
 void pipe::close_open()
 {
@@ -88,14 +85,14 @@ void pipe::_readAll(generic_string& buffer) const
     buffer.resize(4096);
     read(buffer);
 }
-void pipe::_closeEvent(io_access_flag)
+void pipe::_closeEvent(io_access_flag access)
 {
-    if (_fdOpenRead != -1)
+    if ((access&read_access)!=0 && _fdOpenRead!=-1)
     {
         ::close(_fdOpenRead);
         _fdOpenRead = -1;
     }
-    if (_fdOpenWrite != -1)
+    if ((access&write_access)!=0 && _fdOpenWrite != -1)
     {
         ::close(_fdOpenWrite);
         _fdOpenWrite = -1;
