@@ -17,8 +17,9 @@ static const char* const LOG_FILE = "log"; //test
 static const char* const DOMAIN_NAME = "minecraft-control";
 
 // globals
+const char* minecraft_controller::PROGRAM_NAME;
+const char* const minecraft_controller::PROGRAM_VERSION = "0.2 (Beta Test)";
 minecraft_controller_log_stream minecraft_controller::standardLog;
-static const char* programName;
 static domain_socket local;
 
 // types
@@ -32,7 +33,7 @@ static bool local_operation(); // sends control to the local server operation
 int main(int,const char* argv[])
 {
     // perform global setup
-    programName = argv[0];
+    PROGRAM_NAME = argv[0];
 
     // become a daemon
     daemonize();
@@ -147,7 +148,7 @@ void minecraft_controller_log_stream::_outDevice()
 {
     // send our local buffer to the standard console
     // add name and process id
-    stdConsole << programName 
+    stdConsole << PROGRAM_NAME 
                << '[' << ::getpid() << "]: ";
     stdConsole.place(*this);
     stdConsole.flush_output();

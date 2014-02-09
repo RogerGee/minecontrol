@@ -2,6 +2,7 @@
 #include "minecraft-server.h"
 #include <cstring>
 #include <unistd.h>
+#include <fcntl.h> // for now
 #include <signal.h>
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -90,11 +91,11 @@ void minecraft_server_info_ex::read_props(rstream& stream,rstream& errorStream)
 void minecraft_server_info_ex::put_props(rstream& stream) const
 {
     for (size_type i = 0;i<_properties.booleanProps.size();i++)
-        _properties.booleanProps[i]->put(stream);
+        _properties.booleanProps[i]->put(stream), stream << newline;
     for (size_type i = 0;i<_properties.numericProps.size();i++)
-        _properties.numericProps[i]->put(stream);
+        _properties.numericProps[i]->put(stream), stream << newline;
     for (size_type i = 0;i<_properties.stringProps.size();i++)
-        _properties.stringProps[i]->put(stream);
+        _properties.stringProps[i]->put(stream), stream << newline;
 }
 /*static*/ void minecraft_server_info_ex::_strip(str& item)
 {
@@ -150,7 +151,7 @@ minecraft_server::minecraft_server()
     _threadExit = mcraft_noexit;
     _elapsed = 0;
     // load global attributes from file
-    _program = "/usr/bin/java"; // (test) // java program default
+    _program = "/home/roger/code/projects/minecraft-controller/test/test"/*"/usr/bin/java"*/; // (test) // java program default
     //-Xmx1024M -Xms1024M -jar /usr/jar/minecraft_server.jar nogui
     _argumentsBuffer += "-Xmx1024M"; // (test) default for minecraft
     _argumentsBuffer.push_back(0);
@@ -191,7 +192,8 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(const
     {
         // setup the environment for the minecraft server:
         // change process privilages
-        if (::setreuid(info.uid,info.uid)!=0 || ::setregid(info.guid,info.guid)!=0)
+        standardLog << ::geteuid() << endline;
+        if (::setresuid(info.uid,info.uid,info.uid)==-1 /*|| ::setgid(info.guid)==-1*/)
             _exit((int)mcraft_start_server_permissions_fail);
         // change working directory to directory for minecraft server
         path p(info.homeDirectory);
@@ -211,9 +213,17 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(const
         if (::chdir( p.get_full_name().c_str() ) != 0)
             _exit((int)mcraft_start_server_filesystem_error);
         // if creating a new server, attempt to create the server.properties
-        // file; (at this time, file device objects are not finished in rlibrary)
-        /* unimplemented in this version */
-
+        // file
+        if (info.isNew)
+        {
+            rstringstream stream;
+            int fd = ::open("server.properties",O_WRONLY|O_CREAT,S_IRUSR|S_IWUSR);
+            if (fd == -1)
+                _exit((int)mcraft_start_server_filesystem_error);
+            info.put_props(stream);
+            ::write(fd,stream.get_device().c_str(),stream.get_device().size());
+            ::close(fd);
+        }
         // prepare execve arguments
         int top = 0;
         char* pstr = &_argumentsBuffer[0];
@@ -335,17 +345,22 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
 /*static*/ void* minecraft_server::_io_thread(void* pobj)
 {
     minecraft_server* pserver = reinterpret_cast<minecraft_server*>(pobj);
-    pipe_stream pstream(pserver->_iochannel); // open up pipe stream
-    qword lastTick = _alarmTick;
+    pipe_stream serverIO(pserver->_iochannel); // open up pipe stream
+    qword lastTick = _alarmTick, timeVar;
     pserver->_threadExit = mcraft_noexit;
     while (pserver->_threadCondition)
     {
         if (pserver->_elapsed >= pserver->_maxSeconds)
         {
             // time's up! request shutdown from mcraft process
-            pstream << "say The time has expired. The server will soon shutdown." << endline;
-            ::sleep(5); // let the message sink in
-            pstream << "stop" << endline;
+            serverIO << "say The time has expired. The server will soon shutdown.\nsay Going down in...5" << endline;
+            for (int c = 4;c>=1;--c)
+            {
+                ::sleep(1);
+                serverIO << "say " << c << endline;
+            }
+            ::sleep(1);
+            serverIO << "say 0\nstop" << endline;
             pserver->_threadExit = mcraft_exit_timeout_request;
             pserver->_threadCondition = false;
             break;
@@ -362,11 +377,21 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
             break;
         }
         // display time messages at regular intervals
-        if (pserver->_elapsed % 60 == 0)
-            pstream << "say Remaining time: " << pserver->_elapsed << '/' << pserver->_maxSeconds << endline;
+        if (pserver->_elapsed%3600 == 0)
+        {
+            timeVar = pserver->_elapsed / 3600;
+            serverIO << "say Time status: " << timeVar << " hour" << (timeVar>1 ? "s " : " ")
+                     << "remaining" << endline;
+        }
+        timeVar = (pserver->_maxSeconds - pserver->_elapsed);
+        if (timeVar<3600 && timeVar%600==0)
+        {
+            timeVar /= 60;
+            serverIO << "say Time status: " << timeVar << " minute" << (timeVar>1 ? "s " : " ")
+                     << "remaining" << endline;
+        }
         // process mcraft output
-        char buffer[4096];
-        pserver->_iochannel.read(buffer,4096);
+
         // sleep thread and update elapsed information
         ::sleep(1);
         pserver->_elapsed += _alarmTick - lastTick;
@@ -375,7 +400,16 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
     // send the stop command if there's reason to 
     // believe that the server is still running
     if (pserver->_threadExit == mcraft_noexit)
-        pstream << "stop" << endline;
+    {
+        serverIO << "say Attention: a request has been made to close the server.\nsay Going down in...5" << endline;
+        for (int c = 4;c>=1;--c)
+        {
+            ::sleep(1);
+            serverIO << "say " << c << endline;
+        }
+        ::sleep(1);
+        serverIO << "say 0\nstop" << endline;
+    }
     // let another context manage waiting on the process
     return &pserver->_threadExit;
 }
@@ -426,7 +460,7 @@ server_handle::server_handle()
 {
     pserver = NULL;
     _issued = true;
-    _index = 0;
+    _clientid = 0;
 }
 
 // minecraft_controller::minecraft_server_manager
@@ -445,7 +479,6 @@ server_handle::server_handle()
     server_handle* handle = _handles[index];
     handle->pserver = new minecraft_server;
     handle->_issued = true;
-    handle->_index = index;
     _mutex.unlock();
     return handle;
 }

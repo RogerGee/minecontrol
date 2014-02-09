@@ -48,3 +48,4 @@ clean:
 	if [ -d dobj ]; then rm -r --verbose dobj; fi;
 	if [ -f minecraft ]; then rm --verbose minecraft; fi;
 	if [ -f minecraft-debug ]; then rm --verbose minecraft-debug; fi;
+

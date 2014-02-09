@@ -124,10 +124,13 @@ namespace minecraft_controller
         friend class minecraft_server_manager;
         server_handle();
 
+        void set_clientid(const rtypes::qword& id)
+        { _clientid = id; }
+
         minecraft_server* pserver;
     private:
         bool _issued;
-        rtypes::size_type _index;
+        rtypes::qword _clientid;
     };
 
     // static class that manages minecraft servers

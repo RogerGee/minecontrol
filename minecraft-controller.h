@@ -5,6 +5,9 @@
 
 namespace minecraft_controller
 {
+    extern const char* PROGRAM_NAME;
+    extern const char* const PROGRAM_VERSION;
+
     extern class minecraft_controller_log_stream : public rtypes::rstream
     {
     public:

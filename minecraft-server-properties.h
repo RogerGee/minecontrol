@@ -284,7 +284,7 @@ namespace minecraft_controller
 
     struct mcraft_server_port : numeric_prop
     {
-        mcraft_server_port(): numeric_prop(25565) {}
+        mcraft_server_port(): numeric_prop(/*25565*/44444) {}
 
     private:
         virtual const char* _getKeyName() const

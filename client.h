@@ -29,15 +29,15 @@ namespace minecraft_controller
 
         bool authenticate();
         bool message_loop();
-        void command_start(rtypes::rstream&,domain_socket_stream&);
-        void command_status(rtypes::rstream&,domain_socket_stream&);
-        void command_stop(rtypes::rstream&,domain_socket_stream&);
+        void command_start(rtypes::rstream&);
+        void command_status(rtypes::rstream&);
+        void command_stop(rtypes::rstream&);
 
-        domain_socket connection;
+        domain_socket_stream connection;
         pthread_t threadID;
         volatile bool threadCondition;
         int uid, guid;
-        rtypes::str homeDir;
+        rtypes::str homedir;
         rtypes::size_type referenceIndex;
     };
 }
