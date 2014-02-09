@@ -38,7 +38,7 @@ int main(int,const char* argv[])
     daemonize();
 
     // log process start
-    standardLog << "process started";
+    standardLog << "process started" << endline;
 
     // set up signal handler for TERM event
     if (::signal(SIGTERM,&terminate_handler) == SIG_ERR)
@@ -47,14 +47,16 @@ int main(int,const char* argv[])
         _exit(1);
     }
 
+    // perform startup operations
+    minecraft_server_manager::startup_server_manager();
+
     // begin local server operation
     if ( !local_operation() )
         return 1;
 
-    // perform shutdown operations on client 
-    // connections and running servers
+    // perform shutdown operations
     controller_client::shutdown_clients();
-    minecraft_server_manager::shutdown_servers();
+    minecraft_server_manager::shutdown_server_manager();
 
     // log process completion
     standardLog << "process complete" << endline;
@@ -149,4 +151,5 @@ void minecraft_controller_log_stream::_outDevice()
                << '[' << ::getpid() << "]: ";
     stdConsole.place(*this);
     stdConsole.flush_output();
+    _bufOut.clear();
 }

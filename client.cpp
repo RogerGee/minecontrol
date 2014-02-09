@@ -1,6 +1,7 @@
 // client.cpp
 #define _XOPEN_SOURCE // get `crypt'
 #include "client.h"
+#include <unistd.h>
 #include <pwd.h>
 #include "minecraft-controller.h"
 #include "minecraft-server.h"
@@ -41,7 +42,8 @@ using namespace minecraft_controller;
 {
     clientsMutex.lock();
     for (size_type i = 0;i<clients.size();i++)
-        reinterpret_cast<controller_client*>(clients[i])->threadCondition = false;
+        if (clients[i] != NULL)
+            reinterpret_cast<controller_client*>(clients[i])->threadCondition = false;
     clientsMutex.unlock();
 }
 controller_client::controller_client()
@@ -81,10 +83,13 @@ controller_client::controller_client()
 }
 bool controller_client::authenticate()
 {
-    // I let them be all powerful for now...
-    // ....
-    uid = 0;
-    guid = 0;
+    // test
+    uid = ::getuid();
+    guid = ::getgid();
+    // obtain user information
+    passwd* pwd;
+    pwd = getpwuid(uid);
+    homeDir = pwd->pw_dir;
     return true;
 }
 bool controller_client::message_loop()
@@ -110,22 +115,46 @@ bool controller_client::message_loop()
         lineStream >> word;
         rutil_to_lower_ref(word);
         if (word == "start")
-            command_start(lineStream);
+            command_start(lineStream,stream);
         else if (word == "status")
-            command_status(lineStream);
+            command_status(lineStream,stream);
         else if (word == "stop")
-            command_stop(lineStream);
+            command_stop(lineStream,stream);
         else
             stream << "minecraft authority: bad command '" << word << '\'' << endline;
     }
     return false;
 }
-void controller_client::command_start(rstream&)
+void controller_client::command_start(rstream& stream,domain_socket_stream& comStream)
+{
+    server_handle* handle;
+    minecraft_server_info info;
+    minecraft_server::minecraft_server_start_condition cond;
+    // attempt to read arguments
+    stream >> info.internalName;
+    if (rutil_to_lower(info.internalName) == "create")
+    {
+        stream >> info.internalName;
+        info.isNew = true;
+    }
+    info.uid = uid;
+    info.guid = guid;
+    info.homeDirectory = homeDir.c_str();
+    if (info.internalName.length() == 0)
+    {
+        comStream << "minecraft authorority: expected `stop server-name [options]'" << endline;
+        return;
+    }
+    handle = minecraft_server_manager::allocate_server();
+    cond = handle->pserver->begin(info);
+    standardLog << '{' << connection.get_accept_id() << "} "
+                << cond << endline;
+    comStream << "minecraft authority: " << cond << endline;
+    minecraft_server_manager::attach_server(handle);
+}
+void controller_client::command_status(rstream&,domain_socket_stream&)
 {
 }
-void controller_client::command_status(rstream&)
-{
-}
-void controller_client::command_stop(rstream&)
+void controller_client::command_stop(rstream&,domain_socket_stream&)
 {
 }

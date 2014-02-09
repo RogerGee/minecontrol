@@ -26,7 +26,14 @@ int main(int,const char* argv[])
         stdConsole << ">> ";
         stdConsole.getline(line);
 
-        if (line == "<quit>")
+        auto status = stdConsole.get_device().get_last_operation_status();
+        if (status==no_input || status==bad_read)
+        {
+            stdConsole << "The server closed the connection.\n";
+            break;
+        }
+
+        if (line == "quit")
             break;
 
         stream << line << endline;

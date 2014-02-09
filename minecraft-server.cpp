@@ -5,8 +5,10 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <pwd.h>
 #include <errno.h>
 #include "rlibrary/rfilename.h"
+#include "minecraft-controller.h"
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -17,8 +19,9 @@ extern char **environ;
 minecraft_server_info::minecraft_server_info()
 {
     isNew = false;
-    uid = -1;
-    guid = -1;
+    homeDirectory = "";
+    uid = ::getuid();
+    guid = ::getgid();
 }
 void minecraft_server_info::read_props(rstream&,rstream&)
 {
@@ -147,14 +150,21 @@ minecraft_server::minecraft_server()
     _threadExit = mcraft_noexit;
     _elapsed = 0;
     // load global attributes from file
-    _program = "/home/roger/code/projects/minecraft-controller/test/test"; // (test)
-    _argumentsBuffer += "one"; // (test)
+    _program = "/usr/bin/java"; // (test) // java program default
+    //-Xmx1024M -Xms1024M -jar /usr/jar/minecraft_server.jar nogui
+    _argumentsBuffer += "-Xmx1024M"; // (test) default for minecraft
     _argumentsBuffer.push_back(0);
-    _argumentsBuffer += "two";
+    _argumentsBuffer += "-Xms1024M";
+    _argumentsBuffer.push_back(0);
+    _argumentsBuffer += "-jar";
+    _argumentsBuffer.push_back(0);
+    _argumentsBuffer += "/usr/jar/minecraft_server.jar";
+    _argumentsBuffer.push_back(0);
+    _argumentsBuffer += "nogui";
     _argumentsBuffer.push_back(0);
     _argumentsBuffer.push_back(0);
     _shutdownCountdown = 30; // (test) @ 30 seconds
-    _maxSeconds = 5; // (test)
+    _maxSeconds = 3600; // (test) 1 hour
 }
 minecraft_server::~minecraft_server()
 {
@@ -180,12 +190,29 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(const
     if (pid == 0) // child
     {
         // setup the environment for the minecraft server:
+        // change process privilages
+        if (::setreuid(info.uid,info.uid)!=0 || ::setregid(info.guid,info.guid)!=0)
+            _exit((int)mcraft_start_server_permissions_fail);
         // change working directory to directory for minecraft server
         path p(info.homeDirectory);
         p += "minecraft";
+        if ( !p.exists() && !p.make() )
+            _exit((int)mcraft_start_server_filesystem_error);
+        p += info.internalName;
         if ( !p.exists() )
+        {
+            if (!info.isNew)
+                _exit((int)mcraft_start_server_does_not_exist);
             if ( !p.make() )
                 _exit((int)mcraft_start_server_filesystem_error);
+        }
+        else if (info.isNew)
+            _exit((int)mcraft_start_server_already_exists);
+        if (::chdir( p.get_full_name().c_str() ) != 0)
+            _exit((int)mcraft_start_server_filesystem_error);
+        // if creating a new server, attempt to create the server.properties
+        // file; (at this time, file device objects are not finished in rlibrary)
+        /* unimplemented in this version */
 
         // prepare execve arguments
         int top = 0;
@@ -335,9 +362,11 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
             break;
         }
         // display time messages at regular intervals
-
+        if (pserver->_elapsed % 60 == 0)
+            pstream << "say Remaining time: " << pserver->_elapsed << '/' << pserver->_maxSeconds << endline;
         // process mcraft output
-
+        char buffer[4096];
+        pserver->_iochannel.read(buffer,4096);
         // sleep thread and update elapsed information
         ::sleep(1);
         pserver->_elapsed += _alarmTick - lastTick;
@@ -351,15 +380,196 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
     return &pserver->_threadExit;
 }
 
-// minecraft_controller::minecraft_server_manager
+rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::minecraft_server_start_condition condition)
+{
+    if (condition == minecraft_server::mcraft_start_success)
+        return stream << "mcraft server started successfully";
+    stream << "mcraft server start fail: ";
+    if (condition == minecraft_server::mcraft_start_server_filesystem_error)
+        stream << "the filesystem could not be set up correctly";
+    else if (condition == minecraft_server::mcraft_start_server_permissions_fail)
+        stream << "the minecraft server process could not take on the needed credentials";
+    else if (condition == minecraft_server::mcraft_start_server_does_not_exist)
+        stream << "the specified server internal name did not exist";
+    else if (condition == minecraft_server::mcraft_start_server_already_exists)
+        stream << "a new server could not be started because another server exists with the same name";
+    else if (condition == minecraft_server::mcraft_start_server_process_fail)
+        stream << "the child minecraft server process could not be executed";
+    else
+        stream << "an unknown error occurred"; 
+    return stream;
+}
+rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::minecraft_server_exit_condition condition)
+{
+    if (condition == minecraft_server::mcraft_exit_ingame)
+        stream << "mcraft server exit: an in-game event is supposed to have caused the exit";
+    else if (condition == minecraft_server::mcraft_exit_authority_request)
+        stream << "mcraft server exit: by authority: by request";
+    else if (condition == minecraft_server::mcraft_exit_authority_killed)
+        stream << "mcraft server exit: by authority: killed";
+    else if (condition == minecraft_server::mcraft_exit_timeout_request)
+        stream << "mcraft server exit: by timeout: by request";
+    else if (condition == minecraft_server::mcraft_exit_timeout_killed)
+        stream << "mcraft server exit: by timeout: killed";
+    else if (condition == minecraft_server::mcraft_exit_request)
+        stream << "mcraft server exit: by request";
+    else if (condition == minecraft_server::mcraft_exit_killed)
+        stream << "mcraft server exit: killed";
+    else
+        stream << "mcraft server exit: unknown condition";
+    return stream;
+}
 
-/*static*/ minecraft_server* minecraft_server_manager::allocate_server()
+// minecraft_controller::server_handle
+
+server_handle::server_handle()
 {
+    pserver = NULL;
+    _issued = true;
+    _index = 0;
+}
+
+// minecraft_controller::minecraft_server_manager
+/*static*/ mutex minecraft_server_manager::_mutex;
+/*static*/ dynamic_array<server_handle*> minecraft_server_manager::_handles;
+/*static*/ pthread_t minecraft_server_manager::_threadID = -1;
+/*static*/ volatile bool minecraft_server_manager::_threadCondition = false;
+/*static*/ server_handle* minecraft_server_manager::allocate_server()
+{
+    size_type index = 0;
+    _mutex.lock();
+    while (index<_handles.size() && _handles[index]->pserver!=NULL)
+        ++index;
+    if (index >= _handles.size())
+        _handles.push_back(new server_handle);
+    server_handle* handle = _handles[index];
+    handle->pserver = new minecraft_server;
+    handle->_issued = true;
+    handle->_index = index;
+    _mutex.unlock();
+    return handle;
+}
+/*static*/ void minecraft_server_manager::attach_server(server_handle* handle)
+{
+    _mutex.lock();
+    handle->_issued = false;
+    _mutex.unlock();
+}
+/*static*/ void minecraft_server_manager::attach_server(server_handle** handles,size_type count)
+{
+    _mutex.lock();
+    for (size_type i = 0;i<count;i++)
+        handles[i]->_issued = false;
+    _mutex.unlock();
+}
+/*static*/ bool minecraft_server_manager::lookup_auth_servers(int uid,int guid,dynamic_array<server_handle*>& outList)
+{
+    _mutex.lock();
+    for (size_type i = 0;i<_handles.size();i++)
+    {
+        if (_handles[i]->pserver!=NULL && (_handles[i]->pserver->_uid==uid || _handles[i]->pserver->_guid==guid))
+        {
+            _handles[i]->_issued = true;
+            outList.push_back(_handles[i]);
+        }
+    }       
+    _mutex.unlock();
+    return outList.size() > 0;
+}
+/*static*/ bool minecraft_server_manager::print_servers(rstream& stream)
+{
+    _mutex.lock();
+    for (size_type i = 0;i<_handles.size();i++)
+    {
+        if (_handles[i]->pserver != NULL)
+        {
+            int hoursLeft, hoursTotal,
+                minutesLeft, minutesTotal,
+                secondsLeft, secondsTotal;
+            passwd* userInfo = ::getpwuid(_handles[i]->pserver->_uid);
+            if ( _handles[i]->pserver->is_running() )
+            {
+                // calculate time running and time total
+                int var = int(_handles[i]->pserver->_maxSeconds);
+                hoursTotal = var / 3600;
+                var = var % 3600;
+                minutesTotal = var / 60;
+                secondsTotal = var % 60;
+                var = _handles[i]->pserver->_elapsed;
+                hoursLeft = var / 3600;
+                var = var % 3600;
+                minutesLeft = var / 60;
+                secondsLeft = var % 60;                
+            }
+            else
+                hoursLeft = -1;
+            stream << "minecraft-server: pid=" << _handles[i]->pserver->_processID 
+                   << ": user=" << (userInfo==NULL ? "unknown" : userInfo->pw_name) 
+                   << ": time=";
+            if (hoursLeft == -1)
+                stream << "not-running";
+            else
+            {
+                stream.fill('0');
+                stream << setw(2) << hoursLeft << ':' << minutesLeft << ':' << secondsLeft
+                       << '/' << hoursTotal << ':' << minutesTotal << ':' << secondsTotal << setw(0);
+                stream.fill(' ');
+            }
+            stream << newline;
+        }
+    }
+    _mutex.unlock();
+    return _handles.size() > 0;
+}
+/*static*/ void minecraft_server_manager::startup_server_manager()
+{
+    // set up manager thread
+    _threadCondition = true;
+    if (::pthread_create(&_threadID,NULL,&minecraft_server_manager::_manager_thread,NULL) != 0)
+        throw minecraft_server_manager_error();
+}
+/*static*/ void minecraft_server_manager::shutdown_server_manager()
+{
+    // wait for the thread to quit
+    _threadCondition = false;
+    if (::pthread_join(_threadID,NULL) != 0)
+        throw minecraft_server_manager_error();
+    _mutex.lock();
+    for (size_type i = 0;i<_handles.size();i++)
+    {
+        if (_handles[i]->pserver != NULL)
+        {
+            if ( _handles[i]->pserver->was_started() )
+                standardLog << _handles[i]->pserver->end() << endline;
+            delete _handles[i]->pserver;
+            _handles[i]->pserver = NULL;
+        }
+        delete _handles[i];
+    }
+    _handles.clear();
+    _mutex.unlock();
+}
+/*static*/ void* minecraft_server_manager::_manager_thread(void*)
+{
+    // check the run condition of each server; if the server hasn't
+    // been issued and has stopped running, destroy it
+    while (_threadCondition)
+    {
+        _mutex.lock();
+        for (size_type i = 0;i<_handles.size();i++)
+        {
+            if (_handles[i]->pserver!=NULL && !_handles[i]->_issued && !_handles[i]->pserver->is_running())
+            {
+                // the server quit (most likely from a timeout or in-game event)
+                // call its destructor (cleanly ends the server) and free the memory
+                if ( _handles[i]->pserver->was_started() )
+                    standardLog << _handles[i]->pserver->end() << endline;
+                delete _handles[i]->pserver;
+                _handles[i]->pserver = NULL;
+            }
+        }
+        _mutex.unlock();
+        ::sleep(1);
+    }
     return NULL;
-}
-/*static*/ void minecraft_server_manager::deallocate_server(minecraft_server*)
-{
-}
-/*static*/ void minecraft_server_manager::shutdown_servers()
-{
 }
