@@ -1,5 +1,6 @@
 // minecraft-server-properties.cpp
 #include "minecraft-server-properties.h"
+#include "rlibrary/rutility.h"
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -9,9 +10,7 @@ bool mcraft_level_type::_readValue(rstream& stream)
 {
     str id;
     stream >> id;
-    for (size_type i = 0;i<id.length();i++)
-        if (id[i]>='A' && id[i]<='Z')
-            id[i] -= 'A', id[i] += 'a';
+    rutil_to_lower_ref(id);
     if (id == "flat")
         _value = mcraft_level_flat;
     else if (id == "largebiomes")
@@ -41,6 +40,12 @@ void mcraft_level_type::_putValue(rstream& stream) const
         stream << "DEFAULT";
         break;
     }
+}
+
+bool mcraft_motd::_readValue(rstream& stream)
+{
+    stream.getline(_value);
+    return _value.length() > 0;
 }
 
 // minecraft_controller::minecraft_server_generic_property_list derivations

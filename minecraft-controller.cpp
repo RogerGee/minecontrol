@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <string.h>
 #include "minecraft-server.h"
 #include "client.h"
 #include "minecraft-controller.h"
@@ -13,12 +14,12 @@ using namespace rtypes;
 using namespace minecraft_controller;
 
 // constants
-static const char* const LOG_FILE = "log"; //test
+static const char* const LOG_FILE = "/etc/minecontrol.log";
 static const char* const DOMAIN_NAME = "minecraft-control";
 
 // globals
 const char* minecraft_controller::PROGRAM_NAME;
-const char* const minecraft_controller::PROGRAM_VERSION = "0.2 (Beta Test)";
+const char* const minecraft_controller::PROGRAM_VERSION = "0.3 (Beta Test)";
 minecraft_controller_log_stream minecraft_controller::standardLog;
 static domain_socket local;
 
@@ -41,10 +42,15 @@ int main(int,const char* argv[])
     // log process start
     standardLog << "process started" << endline;
 
-    // set up signal handler for TERM event
+    // set up signal handler for TERM and INT events
     if (::signal(SIGTERM,&terminate_handler) == SIG_ERR)
     {
         standardLog << "cannot create signal handler for SIGTERM" << endline;
+        _exit(1);
+    }
+    if (::signal(SIGINT,&terminate_handler) == SIG_ERR)
+    {
+        standardLog << "cannot create signal handler for SIGINT" << endline;
         _exit(1);
     }
 
@@ -66,7 +72,6 @@ int main(int,const char* argv[])
 
 void daemonize()
 {
-    return;
     // let's become a daemon
     pid_t pid = ::fork();
     if (pid == -1)
@@ -85,8 +90,7 @@ void daemonize()
         // reset umask
         ::umask(0);
         // set working directory to root
-        //::chdir("/");
-        // try to close all file descriptors
+        ::chdir("/");
         int fd, fdNull;
         // duplicate:
         //  log file to STDOUT and STDERR
@@ -115,9 +119,9 @@ void daemonize()
         ::_exit(0);
 }
 
-void terminate_handler(int)
+void terminate_handler(int sig)
 {
-    standardLog << "the server is going down; received TERM signal" << endline;
+    standardLog << "the server is going down; received " << ::strsignal(sig) << " signal" << endline;
     local.shutdown();
     local.close();
 }

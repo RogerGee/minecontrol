@@ -215,6 +215,7 @@ namespace minecraft_controller
         mcraft_motd(): string_prop("A Minecraft Server") {}
 
     private:
+        virtual bool _readValue(rtypes::rstream&);
         virtual const char* _getKeyName() const
         { return "motd"; }
     };
@@ -284,7 +285,7 @@ namespace minecraft_controller
 
     struct mcraft_server_port : numeric_prop
     {
-        mcraft_server_port(): numeric_prop(/*25565*/44444) {}
+        mcraft_server_port(): numeric_prop(25565) {}
 
     private:
         virtual const char* _getKeyName() const

@@ -33,7 +33,7 @@ using namespace minecraft_controller;
         else
             clients.push_back(pnew);
         clientsMutex.unlock();
-        standardLog << '{' << pnew->connection.get_device().get_accept_id() << "} accepted client connection" << endline;
+        pnew->client_log(standardLog) << "accepted client connection" << endline;
         return pnew;
     }
     // the accept failed
@@ -52,7 +52,7 @@ controller_client::controller_client()
 {
     threadID = -1;
     threadCondition = true;
-    uid = -1;
+    uid = -1; // means "not logged in"
     guid = -1;
     referenceIndex = 0;
 }
@@ -60,29 +60,13 @@ controller_client::controller_client()
 {
     controller_client* client = reinterpret_cast<controller_client*>(pclient);
     domain_socket& clientSock = client->connection.get_device();
-    // authenticate the client
-    if ( !client->authenticate() )
+    // enter into communication with the client;
+    // if message_loop() returns false, then the
+    // client should be disconnected from this end
+    if ( !client->message_loop() )
     {
-        if (clientSock.get_last_operation_status() != success_read)
-            standardLog << '{' << clientSock.get_accept_id() << "} client disconnected before authentication" << endline;
-        else
-        {
-            client->connection << PROGRAM_NAME << ": authentication failure" << endline;
-            standardLog << '{' << clientSock.get_accept_id() << "} client failed authentication" << endline;
-        }
-    }
-    else
-    {
-        client->connection << PROGRAM_NAME << ": successful login\n" << PROGRAM_NAME << '/' << PROGRAM_VERSION << endline;
-        standardLog << '{' << clientSock.get_accept_id() << "} client authenticated successfully" << endline;
-        // enter into communication with the client;
-        // if message_loop() returns false, then the
-        // client should be disconnected from this end
-        if ( !client->message_loop() )
-        {
-            clientSock.shutdown();
-            standardLog << '{' << clientSock.get_accept_id() << "} client connection shutdown by server" << endline;
-        }
+        clientSock.shutdown();
+        client->client_log(standardLog) << "client connection shutdown by server" << endline;
     }
     // remove client reference from the list of maintained clients
     clientsMutex.lock();
@@ -93,13 +77,71 @@ controller_client::controller_client()
     delete client;
     return NULL;
 }
-bool controller_client::authenticate()
+bool controller_client::message_loop()
 {
-    // ask the client to authenticate themselves
+    domain_socket& sock = connection.get_device();
+    // send the client the name of this server
+    connection << PROGRAM_NAME << '/' << PROGRAM_VERSION << endline;
+    while (threadCondition)
+    {
+        // get message as line of text separated by newline
+        rstringstream lineStream;
+        connection.getline( lineStream.get_device() );
+        if (sock.get_last_operation_status() == no_input) // client disconnected
+        {
+            client_log(standardLog) << "client disconnect" << endline;
+            return true;
+        }
+        else if (sock.get_last_operation_status() == bad_read) // input error; assume disconnect
+        {
+            client_log(standardLog) << "read error: client disconnect" << endline;
+            return true;
+        }
+        lineStream.delimit_whitespace(false);
+        lineStream.add_extra_delimiter("|,");
+        // process message
+        str command;
+        lineStream >> command;
+        rutil_to_lower_ref(command);
+        if (uid == -1) // user is not logged in
+        {
+            if (command == "login")
+                command_login(lineStream);
+            else
+                send_message("error") << "Permission denied: please log in" << endline;
+        }
+        else // user is logged in
+        {
+            if (command == "start")
+                command_start(lineStream);
+            else if (command == "status")
+                command_status(lineStream);
+            else if (command == "stop")
+                command_stop(lineStream);
+            else
+                send_message("error") << "Command `" << command << "' is not understood" << endline;
+        }
+    }
+    return false;
+}
+bool controller_client::command_login(rtypes::rstream& stream) // handles `login' requests
+{
+    // read fields from message stream
     str username, password;
-    connection >> username >> password;
-    if (connection.get_device().get_last_operation_status() != success_read)
+    stream >> username >> password;
+    // check fields
+    if (username.length() == 0)
+    {
+        send_message("error") << "Required parameter for username missing" << endline;
+        client_log(standardLog) << "authentication failure: client didn't supply username" << endline;
         return false;
+    }
+    if (password.length() == 0)
+    {
+        send_message("error") << "Required parameter for password missing" << endline;
+        client_log(standardLog) << "authentication failure: client didn't supply password" << endline;
+        return false;
+    }
     // obtain user information
     passwd* pwd;
     spwd* shadowPwd;
@@ -107,13 +149,15 @@ bool controller_client::authenticate()
     pwd = getpwnam( username.c_str() );
     if (pwd == NULL)
     {
-        standardLog << "bad username on authentication: " << username << endline;
+        send_message("error") << "Authentication failure: bad username" << endline;
+        client_log(standardLog) << "authentication failure: bad username `" << username << '\'' << endline;
         return false;
     }
     shadowPwd = getspnam( username.c_str() );
     if (shadowPwd==NULL && errno==EACCES)
     {
-        standardLog << "warning: server doesn't have permission to authenticate user" << endline;
+        send_message("error") << "Server error: the server cannot log you in" << endline;
+        standardLog << "!!warning!!: server doesn't have permission to authenticate user; is this process priviledged?" << endline;
         return false;
     }
     pwd->pw_passwd = shadowPwd->sp_pwdp;
@@ -121,60 +165,31 @@ bool controller_client::authenticate()
         throw controller_client_error();
     if ( !rutil_strcmp(pencrypt,pwd->pw_passwd) )
     {
-        standardLog << "bad password on username: " << username << endline;
+        send_message("error") << "Authentication failure: bad password for user `" << username << '\'' << endline;
+        client_log(standardLog) << "authentication failure: bad password for user `" << username << '\'' << endline;
         return false;
     }
     uid = pwd->pw_uid;
     guid = pwd->pw_gid;
     homedir = pwd->pw_dir;
+    send_message("message") << "Authentication complete: logged in as `" << username << '\'' << endline;
+    client_log(standardLog) << "client authenticated successfully as `" << username << '\'' << endline;
     return true;
 }
-bool controller_client::message_loop()
-{
-    domain_socket& sock = connection.get_device();
-    while (threadCondition)
-    {
-        rstringstream lineStream;
-        connection.getline( lineStream.get_device() );
-        if (sock.get_last_operation_status() == no_input) // client disconnected
-        {
-            standardLog << '{' << sock.get_accept_id() << "} client disconnect" << endline;
-            return true;
-        }
-        else if (sock.get_last_operation_status() == bad_read) // input error; assume disconnect
-        {
-            standardLog << '{' << sock.get_accept_id() 
-                        << "} read error: client disconnect" << endline;
-            return true;
-        }
-        str word;
-        lineStream >> word;
-        rutil_to_lower_ref(word);
-        if (word == "start")
-            command_start(lineStream);
-        else if (word == "status")
-            command_status(lineStream);
-        else if (word == "stop")
-            command_stop(lineStream);
-        else
-            connection << PROGRAM_NAME << ": command `" << word << "' is not understood" << endline;
-    }
-    return false;
-}
-void controller_client::command_start(rstream& stream)
+
+bool controller_client::command_start(rstream& stream)
 {
     str s;
-    server_handle* handle;
     minecraft_server_info* pinfo;
-    minecraft_server::minecraft_server_start_condition cond;
     // attempt to read arguments
     stream >> s;
     if (rutil_to_lower(s) == "create")
     {
+        rstringstream errors;
         pinfo = new minecraft_server_info_ex;
         stream >> pinfo->internalName;
         pinfo->isNew = true;
-        pinfo->read_props(stream,connection); // read and parse options
+        pinfo->read_props(stream,errors); // read and parse options
     }
     else
     {
@@ -183,29 +198,40 @@ void controller_client::command_start(rstream& stream)
     }
     if (pinfo->internalName.length() == 0)
     {
-        connection << PROGRAM_NAME << ": bad command syntax: `start [create] server-name [options]'" << endline;
+        send_message("error") << "Bad command syntax: usage: `start [create] server-name [options]'" << endline;
         delete pinfo;
-        return;
+        return false;
     }
     pinfo->uid = uid;
     pinfo->guid = guid;
     pinfo->homeDirectory = homedir.c_str();
     // attempt to start the minecraft server
+    server_handle* handle;
     handle = minecraft_server_manager::allocate_server();
     handle->set_clientid( connection.get_device().get_accept_id() );
-    cond = handle->pserver->begin(*pinfo);
-    standardLog << '{' << connection.get_device().get_accept_id() << "} "
-                << cond << endline;
-    connection << PROGRAM_NAME << ": " << cond << endline;
+    auto cond = handle->pserver->begin(*pinfo);
+    client_log(standardLog) << cond << endline;
+    send_message("message") << cond << endline;
     minecraft_server_manager::attach_server(handle);
     delete pinfo;
+    return true;
 }
-void controller_client::command_status(rstream&)
+bool controller_client::command_status(rstream&)
 {
-    if ( !minecraft_server_manager::print_servers(connection) )
-        connection << "No servers currently running under this manager";
-    connection << endline;
+    minecraft_server_manager::print_servers( send_message("message") );
+    return true;
 }
-void controller_client::command_stop(rstream&)
+bool controller_client::command_stop(rstream&)
 {
+    return false;
+}
+inline
+rstream& controller_client::client_log(rstream& stream)
+{
+    return stream << '{' << connection.get_device().get_accept_id() << "} ";
+}
+inline
+rstream& controller_client::send_message(const char* command)
+{
+    return connection << command << '|';
 }

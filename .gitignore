@@ -1,6 +1,6 @@
 test/
 obj/
 dobj/
-minecraft-controller
-minecraft-controller-debug
+minecontrold
+minecontrold-debug
 client/minecraft

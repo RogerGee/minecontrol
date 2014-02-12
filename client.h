@@ -27,11 +27,14 @@ namespace minecraft_controller
         static rtypes::dynamic_array<void*> clients; // rlibrary limitation: reduces coat-bloat
         static void* client_thread(void*);
 
-        bool authenticate();
         bool message_loop();
-        void command_start(rtypes::rstream&);
-        void command_status(rtypes::rstream&);
-        void command_stop(rtypes::rstream&);
+        bool command_login(rtypes::rstream&);
+        bool command_start(rtypes::rstream&);
+        bool command_status(rtypes::rstream&);
+        bool command_stop(rtypes::rstream&);
+
+        inline rtypes::rstream& client_log(rtypes::rstream&);
+        inline rtypes::rstream& send_message(const char* command);
 
         domain_socket_stream connection;
         pthread_t threadID;

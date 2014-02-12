@@ -5,11 +5,11 @@
 
 # programs and options
 ifeq ($(MAKECMDGOALS),debug)
-PROGRAM = minecraft-controller-debug
+PROGRAM = minecontrold-debug
 COMPILE = g++ -g -c -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-unused-variable -pedantic-errors --std=gnu++0x
 OBJECT_DIRECTORY = dobj/
 else
-PROGRAM = minecraft-controller
+PROGRAM = minecontrold
 COMPILE = g++ -c -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-unused-variable -pedantic-errors --std=gnu++0x
 OBJECT_DIRECTORY = obj/
 endif
@@ -68,5 +68,5 @@ $(OBJECT_DIRECTORY):
 clean:
 	if [ -d obj ]; then rm -r --verbose obj; fi;
 	if [ -d dobj ]; then rm -r --verbose dobj; fi;
-	if [ -f minecraft-controller ]; then rm --verbose minecraft-controller; fi;
-	if [ -f minecraft-controller-debug ]; then rm --verbose minecraft-controller-debug; fi;
+	if [ -f minecontrold ]; then rm --verbose minecontrold; fi;
+	if [ -f minecontrold-debug ]; then rm --verbose minecontrold-debug; fi;

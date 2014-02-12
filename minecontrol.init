@@ -1,0 +1,3 @@
+exec=/usr/bin/java
+cmd-line=-Xmx1024M -Xms1024M -jar /usr/jar/minecraft_server.jar nogui
+override-port=44444

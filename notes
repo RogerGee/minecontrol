@@ -57,5 +57,26 @@ m generate-structures=true
 + motd=A Minecraft Server
 
 --------------------------------------------------------------------------------
+Server Internal Props:
+exec=STRING (absolute path)
+cmd-line=arg1 arg2 arg3 ...
+server-time=NUMERIC in seconds
+countdown-time=NUMERIC in seconds
+override-port=NUMERIC zero is not valid
+--------------------------------------------------------------------------------
 --help text:
 
+--------------------------------------------------------------------------------
+Simple protocol for client/server communication:
+       The client initates a request, which normally corresponds to user input
+of some kind. The server processes the request and performs some kind of action.
+
+   Messages: requests and responses are very similar. They can contain all printable
+characters except '|' and ','. Whitespace is considered to be part of any field's
+value.
+        [general format]
+        COMMAND|Field, field, field, ... \n
+
+        Each message is terminated by a single newline character. It is recommended
+that each client or server read message into a local buffer until the newline is encountered
+before processing the message

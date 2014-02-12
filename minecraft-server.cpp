@@ -9,11 +9,15 @@
 #include <pwd.h>
 #include <errno.h>
 #include "rlibrary/rfilename.h"
+#include "rlibrary/rfile.h"
+#include "rlibrary/rutility.h"
 #include "minecraft-controller.h"
 using namespace rtypes;
 using namespace minecraft_controller;
 
+// globals
 extern char **environ;
+static const char* const SERVER_INIT_FILE = "/etc/minecontrol.init";
 
 // minecraft_controller::minecraft_server_info
 
@@ -27,6 +31,11 @@ minecraft_server_info::minecraft_server_info()
 void minecraft_server_info::read_props(rstream&,rstream&)
 {
     // do nothing
+}
+bool minecraft_server_info::set_prop(const str&,const str&)
+{
+    // do nothing
+    return false;
 }
 void minecraft_server_info::put_props(rstream&) const
 {
@@ -50,43 +59,60 @@ void minecraft_server_info_ex::read_props(rstream& stream,rstream& errorStream)
         // make key lower-case so that it can match
         // the keys of the defined properties; they 
         // are guaranteed to be lower-case
-        for (size_type i = 0;i<key.length();i++)
-            if (key[i]>='A' && key[i]<='Z')
-                key[i] -= 'A', key[i] += 'a';
+        rutil_to_lower_ref(key);
         // check the three different types of properties
         {
             boolean_prop* pprop = _properties.booleanProps.lookup(key.c_str());
             if (pprop != NULL)
             {
                 if ( !pprop->set_value(value) )
-                    errorStream << "error The property '" << key << "' cannot be assigned the value '" << value << "'.\n";
+                    errorStream << "The property '" << key << "' cannot be assigned the value '" << value << "'.\n";
             }
             else
-                errorStream << "error The specified server property '" << key << "' does not exist and was ignored.\n";
+                errorStream << "The specified server property '" << key << "' does not exist and was ignored.\n";
         }
         {
             numeric_prop* pprop = _properties.numericProps.lookup(key.c_str());
             if (pprop != NULL)
             {
                 if ( !pprop->set_value(value) )
-                    errorStream << "error The property '" << key << "' cannot be assigned the value '" << value << "'.\n";
+                    errorStream << "The property '" << key << "' cannot be assigned the value '" << value << "'.\n";
             }
             else
-                errorStream << "error The specified server property '" << key << "' does not exist and was ignored.\n";
+                errorStream << "The specified server property '" << key << "' does not exist and was ignored.\n";
         }
         {
             string_prop* pprop = _properties.stringProps.lookup(key.c_str());
             if (pprop != NULL)
             {
                 if ( !pprop->set_value(value) )
-                    errorStream << "error The property '" << key << "' cannot be assigned the value '" << value << "'.\n";
+                    errorStream << "The property '" << key << "' cannot be assigned the value '" << value << "'.\n";
             }
             else
-                errorStream << "error The specified server property '" << key << "' does not exist and was ignored.\n";
+                errorStream << "The specified server property '" << key << "' does not exist and was ignored.\n";
         }
     }
     stream.remove_extra_delimiter("-=");
     stream.delimit_whitespace(true);
+}
+bool minecraft_server_info_ex::set_prop(const str& name,const str& value)
+{
+    {
+        boolean_prop* pprop = _properties.booleanProps.lookup(name.c_str());
+        if (pprop != NULL)
+            return pprop->set_value(value);
+    }
+    {
+        numeric_prop* pprop = _properties.numericProps.lookup(name.c_str());
+        if (pprop != NULL)
+            return pprop->set_value(value);
+    }
+    {
+        string_prop* pprop = _properties.stringProps.lookup(name.c_str());
+        if (pprop != NULL)
+            return pprop->set_value(value);
+    }
+    return false;
 }
 void minecraft_server_info_ex::put_props(rstream& stream) const
 {
@@ -141,31 +167,66 @@ minecraft_server::minecraft_server()
             throw minecraft_server_error();
         ++_handlerRef;
     }
-    // assign server object properties defaults
-    _uid = -1;
-    _guid = -1;
-    // assign default per process attributes
+    // initialize per process attributes
     _threadID = -1;
     _processID = -1;
     _threadCondition = false;
     _threadExit = mcraft_noexit;
     _elapsed = 0;
-    // load global attributes from file
-    _program = "/home/roger/code/projects/minecraft-controller/test/test"/*"/usr/bin/java"*/; // (test) // java program default
-    //-Xmx1024M -Xms1024M -jar /usr/jar/minecraft_server.jar nogui
-    _argumentsBuffer += "-Xmx1024M"; // (test) default for minecraft
+    _uid = -1;
+    _guid = -1;
+    // set default attributes before attempting
+    // to load them from file
+    _program = "/home/roger/code/projects/minecraft-controller/test/test"/*"/usr/bin/java"*/; // java program default
+    _argumentsBuffer += "-Xmx1024M"; // defaults for minecraft: -Xmx1024M -Xms1024M -jar minecraft_server.jar nogui
     _argumentsBuffer.push_back(0);
     _argumentsBuffer += "-Xms1024M";
     _argumentsBuffer.push_back(0);
     _argumentsBuffer += "-jar";
     _argumentsBuffer.push_back(0);
-    _argumentsBuffer += "/usr/jar/minecraft_server.jar";
+    _argumentsBuffer += "minecraft_server.jar";
     _argumentsBuffer.push_back(0);
     _argumentsBuffer += "nogui";
     _argumentsBuffer.push_back(0);
     _argumentsBuffer.push_back(0);
-    _shutdownCountdown = 30; // (test) @ 30 seconds
-    _maxSeconds = 3600; // (test) 1 hour
+    _shutdownCountdown = 30; // 30 seconds
+    _maxSeconds = 3600*4; // 4 hours
+    // load global attributes from file
+    file initFile;
+    if ( initFile.open_input(SERVER_INIT_FILE,file_open_existing) )
+    {
+        file_stream fstream(initFile);
+        fstream.delimit_whitespace(false);
+        fstream.add_extra_delimiter("=\n");
+        while (fstream.has_input())
+        {
+            str key;
+            rstringstream ssValue;
+            fstream >> key >> ssValue.get_device();
+            rutil_to_lower_ref(key);
+            // test for each key
+            if (key == "exec")
+                _program = ssValue.get_device();
+            else if (key == "cmd-line")
+            {
+                _argumentsBuffer.clear();
+                while (ssValue >> key)
+                {
+                    _argumentsBuffer += key;
+                    _argumentsBuffer.push_back(0);
+                }
+                _argumentsBuffer.push_back(0);
+            }
+            else if (key == "server-timer")
+                ssValue >> _maxSeconds;
+            else if (key == "countdown-time")
+                ssValue >> _shutdownCountdown;
+            else if (key == "override-port")
+                ssValue >> _defaultPort;
+        }
+    }
+    else
+        standardLog << "!!warning!!: no init file found or can't open it: using internal defaults" << endline;
 }
 minecraft_server::~minecraft_server()
 {
@@ -184,7 +245,7 @@ minecraft_server::~minecraft_server()
             throw minecraft_server_error();
     }
 }
-minecraft_server::minecraft_server_start_condition minecraft_server::begin(const minecraft_server_info& info)
+minecraft_server::minecraft_server_start_condition minecraft_server::begin(minecraft_server_info& info)
 {
     _iochannel.open(); // create new pipe for communication
     pid_t pid = ::fork();
@@ -192,8 +253,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(const
     {
         // setup the environment for the minecraft server:
         // change process privilages
-        standardLog << ::geteuid() << endline;
-        if (::setresuid(info.uid,info.uid,info.uid)==-1 /*|| ::setgid(info.guid)==-1*/)
+        if (::setresgid(info.guid,info.guid,info.guid)==-1 || ::setresuid(info.uid,info.uid,info.uid)==-1)
             _exit((int)mcraft_start_server_permissions_fail);
         // change working directory to directory for minecraft server
         path p(info.homeDirectory);
@@ -212,17 +272,17 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(const
             _exit((int)mcraft_start_server_already_exists);
         if (::chdir( p.get_full_name().c_str() ) != 0)
             _exit((int)mcraft_start_server_filesystem_error);
-        // if creating a new server, attempt to create the server.properties
-        // file
+        // if creating a new server, attempt to create the server.properties file
         if (info.isNew)
         {
-            rstringstream stream;
-            int fd = ::open("server.properties",O_WRONLY|O_CREAT,S_IRUSR|S_IWUSR);
-            if (fd == -1)
+            file_stream fstream("server.properties");
+            if ( !fstream.get_device().is_valid_context() )
                 _exit((int)mcraft_start_server_filesystem_error);
-            info.put_props(stream);
-            ::write(fd,stream.get_device().c_str(),stream.get_device().size());
-            ::close(fd);
+            // insert any override properties
+            if (_defaultPort.length()>0 && !info.set_prop("server-port",_defaultPort))
+                _exit((int)mcraft_start_server_filesystem_error);
+            // write props to properties file
+            info.put_props(fstream);
         }
         // prepare execve arguments
         int top = 0;
@@ -331,10 +391,14 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
                     throw minecraft_server_error();
             ::sleep(1);
         }
+        // put every "per-server" attribute back in an invalid state
         _iochannel.close();
         _processID = -1;
         _threadID = -1;
         _threadExit = mcraft_noexit;
+        _elapsed = 0;
+        _uid = -1;
+        _guid = -1;
     }
     return status;
 }
@@ -379,7 +443,7 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
         // display time messages at regular intervals
         if (pserver->_elapsed%3600 == 0)
         {
-            timeVar = pserver->_elapsed / 3600;
+            timeVar = (pserver->_maxSeconds - pserver->_elapsed) / 3600;
             serverIO << "say Time status: " << timeVar << " hour" << (timeVar>1 ? "s " : " ")
                      << "remaining" << endline;
         }
@@ -416,9 +480,11 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
 
 rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::minecraft_server_start_condition condition)
 {
+    // these messages could be sent to the user and therefore follow
+    // the typical conventions for user messages
     if (condition == minecraft_server::mcraft_start_success)
-        return stream << "mcraft server started successfully";
-    stream << "mcraft server start fail: ";
+        return stream << "Minecraft server started successfully";
+    stream << "Minecraft server start fail: ";
     if (condition == minecraft_server::mcraft_start_server_filesystem_error)
         stream << "the filesystem could not be set up correctly";
     else if (condition == minecraft_server::mcraft_start_server_permissions_fail)
@@ -430,27 +496,29 @@ rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::min
     else if (condition == minecraft_server::mcraft_start_server_process_fail)
         stream << "the child minecraft server process could not be executed";
     else
-        stream << "an unknown error occurred"; 
+        stream << "an unspecified error occurred"; 
     return stream;
 }
 rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::minecraft_server_exit_condition condition)
 {
+    // these messages could be sent to the user and therefore follow
+    // the typical conventions for user messages
     if (condition == minecraft_server::mcraft_exit_ingame)
-        stream << "mcraft server exit: an in-game event is supposed to have caused the exit";
+        stream << "Minecraft server exit: an in-game event is supposed to have caused the shutdown";
     else if (condition == minecraft_server::mcraft_exit_authority_request)
-        stream << "mcraft server exit: by authority: by request";
+        stream << "Minecraft server exit: an authoritative event caused the server to cleanly shutdown";
     else if (condition == minecraft_server::mcraft_exit_authority_killed)
-        stream << "mcraft server exit: by authority: killed";
+        stream << "Minecraft server exit: an authoritative event caused the server process to be killed";
     else if (condition == minecraft_server::mcraft_exit_timeout_request)
-        stream << "mcraft server exit: by timeout: by request";
+        stream << "Minecraft server exit: the server timed-out and was cleanly shutdown";
     else if (condition == minecraft_server::mcraft_exit_timeout_killed)
-        stream << "mcraft server exit: by timeout: killed";
+        stream << "Minecraft server exit: the server timed-out and the server process was killed";
     else if (condition == minecraft_server::mcraft_exit_request)
-        stream << "mcraft server exit: by request";
+        stream << "Minecraft server exit: the server was cleanly shutdown";
     else if (condition == minecraft_server::mcraft_exit_killed)
-        stream << "mcraft server exit: killed";
+        stream << "Minecraft server exit: the server process was killed";
     else
-        stream << "mcraft server exit: unknown condition";
+        stream << "Minecraft server exit: the server process exited for an unspecified reason";
     return stream;
 }
 
@@ -509,8 +577,9 @@ server_handle::server_handle()
     _mutex.unlock();
     return outList.size() > 0;
 }
-/*static*/ bool minecraft_server_manager::print_servers(rstream& stream)
+/*static*/ void minecraft_server_manager::print_servers(rstream& stream)
 {
+    bool noneFound = true;
     _mutex.lock();
     for (size_type i = 0;i<_handles.size();i++)
     {
@@ -532,7 +601,7 @@ server_handle::server_handle()
                 hoursLeft = var / 3600;
                 var = var % 3600;
                 minutesLeft = var / 60;
-                secondsLeft = var % 60;                
+                secondsLeft = var % 60;       
             }
             else
                 hoursLeft = -1;
@@ -548,11 +617,14 @@ server_handle::server_handle()
                        << '/' << hoursTotal << ':' << minutesTotal << ':' << secondsTotal << setw(0);
                 stream.fill(' ');
             }
-            stream << newline;
+            stream << ','; // follow the protocol: use a comma to separate elements
+            noneFound = false;
         }
     }
+    if (noneFound)
+        stream << "No active servers running at this time";
+    stream << endline;
     _mutex.unlock();
-    return _handles.size() > 0;
 }
 /*static*/ void minecraft_server_manager::startup_server_manager()
 {
@@ -573,7 +645,7 @@ server_handle::server_handle()
         if (_handles[i]->pserver != NULL)
         {
             if ( _handles[i]->pserver->was_started() )
-                standardLog << _handles[i]->pserver->end() << endline;
+                standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() << endline;
             delete _handles[i]->pserver;
             _handles[i]->pserver = NULL;
         }
@@ -596,7 +668,7 @@ server_handle::server_handle()
                 // the server quit (most likely from a timeout or in-game event)
                 // call its destructor (cleanly ends the server) and free the memory
                 if ( _handles[i]->pserver->was_started() )
-                    standardLog << _handles[i]->pserver->end() << endline;
+                    standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() << endline;
                 delete _handles[i]->pserver;
                 _handles[i]->pserver = NULL;
             }

@@ -14,6 +14,7 @@ namespace minecraft_controller
     struct minecraft_server_info
     {
         minecraft_server_info();
+        virtual ~minecraft_server_info() {}
 
         bool isNew; // request (if possible) that a new server be made with the specified name
         rtypes::str internalName; // corresponds to the directory that contains the Minecraft server files
@@ -25,6 +26,8 @@ namespace minecraft_controller
         // readable fashion to 'errorStream'
         virtual void read_props(rtypes::rstream&,rtypes::rstream& errorStream);
 
+        virtual bool set_prop(const rtypes::str& name,const rtypes::str& value);
+
         // writes properties in the correct format for the `server.properties'
         // file used by the minecraft server process
         virtual void put_props(rtypes::rstream&) const;
@@ -33,6 +36,7 @@ namespace minecraft_controller
     struct minecraft_server_info_ex : minecraft_server_info
     {
         virtual void read_props(rtypes::rstream&,rtypes::rstream& errorStream);
+        virtual bool set_prop(const rtypes::str&,const rtypes::str&);
         virtual void put_props(rtypes::rstream&) const;
     private:
         minecraft_server_property_list _properties;
@@ -82,12 +86,16 @@ namespace minecraft_controller
 
         // spawns a child process that executes the minecraft
         // server Java binary
-        minecraft_server_start_condition begin(const minecraft_server_info&);
+        minecraft_server_start_condition begin(minecraft_server_info&);
 
         // requests that the server shutdown by issuing "stop"
-        // to the server's standard input
+        // to the server's standard input; "end" should be called
+        // on every server after a begin; "end" will be called by the
+        // destructor if you do not call it yourself
         minecraft_server_exit_condition end();
 
+        // "was_started" and "is_running" can be used in conjunction
+        // to determine whether "end()" has been called on the object
         bool was_started() const
         { return _processID != -1; }
         bool is_running() volatile
@@ -103,15 +111,16 @@ namespace minecraft_controller
         pid_t _processID;
         pipe _iochannel;
         volatile bool _threadCondition;
-        minecraft_server_exit_condition _threadExit;
+        minecraft_server_exit_condition _threadExit; // (this just serves as a memory location that outlives _io_thread)
         rtypes::qword _elapsed;
         int _uid, _guid;
 
-        // global server attributes (read from init file)
+        // global server attributes (read from initialization file)
         rtypes::str _program; // path to executable
         rtypes::str _argumentsBuffer; // arguments to executable separated by null-characters and terminated by a final null-character
         rtypes::byte _shutdownCountdown; // the number of seconds to wait for the server to shutdown before killing it
         rtypes::qword _maxSeconds; // the number of seconds to allow the server to run before auto-shutdown
+        rtypes::str _defaultPort; // if non-empty, override this port if creating a new server configuration
     };
 
     rtypes::rstream& operator <<(rtypes::rstream&,minecraft_server::minecraft_server_start_condition);
@@ -158,7 +167,7 @@ namespace minecraft_controller
 
         // prints out server all information on the specified rstream; this
         // includes servers that are not owned by a certain user
-        static bool print_servers(rtypes::rstream&);
+        static void print_servers(rtypes::rstream&);
 
         // starts up the server manager system
         static void startup_server_manager();
