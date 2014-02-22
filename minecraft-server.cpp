@@ -27,32 +27,19 @@ minecraft_server_info::minecraft_server_info()
     homeDirectory = "";
     uid = ::getuid();
     guid = ::getgid();
+    // set extended options (props)
+    // these default values cause them to be
+    // ignored by another context
+    serverTime = 0;
 }
-void minecraft_server_info::read_props(rstream&,rstream&)
-{
-    // do nothing
-}
-bool minecraft_server_info::set_prop(const str&,const str&)
-{
-    // do nothing
-    return false;
-}
-void minecraft_server_info::put_props(rstream&) const
-{
-    // do nothing
-}
-
-// minecraft_controller::minecraft_server_info_ex
-
-void minecraft_server_info_ex::read_props(rstream& stream,rstream& errorStream)
+void minecraft_server_info::read_props(rstream& inputStream,rstream& errorStream)
 {
     str key;
     str value;
-    stream.add_extra_delimiter("=-");
-    stream.delimit_whitespace(false);
-    while ( stream.has_input() )
+    inputStream.add_extra_delimiter('=');
+    while ( inputStream.has_input() )
     {
-        stream >> key >> value;
+        inputStream >> key >> value;
         // strip leading/trailing whitespace off of strings
         _strip(key);
         _strip(value);
@@ -60,70 +47,58 @@ void minecraft_server_info_ex::read_props(rstream& stream,rstream& errorStream)
         // the keys of the defined properties; they 
         // are guaranteed to be lower-case
         rutil_to_lower_ref(key);
-        // check the three different types of properties
+        // check to see if the property belongs to
+        // the server.properties file list; if not,
+        // attempt the extended properties list
+        _prop_process_flag flag = _process_prop(key,value);
+        if (flag != _prop_process_success)
         {
-            boolean_prop* pprop = _properties.booleanProps.lookup(key.c_str());
-            if (pprop != NULL)
-            {
-                if ( !pprop->set_value(value) )
-                    errorStream << "The property '" << key << "' cannot be assigned the value '" << value << "'.\n";
-            }
-            else
-                errorStream << "The specified server property '" << key << "' does not exist and was ignored.\n";
-        }
-        {
-            numeric_prop* pprop = _properties.numericProps.lookup(key.c_str());
-            if (pprop != NULL)
-            {
-                if ( !pprop->set_value(value) )
-                    errorStream << "The property '" << key << "' cannot be assigned the value '" << value << "'.\n";
-            }
-            else
-                errorStream << "The specified server property '" << key << "' does not exist and was ignored.\n";
-        }
-        {
-            string_prop* pprop = _properties.stringProps.lookup(key.c_str());
-            if (pprop != NULL)
-            {
-                if ( !pprop->set_value(value) )
-                    errorStream << "The property '" << key << "' cannot be assigned the value '" << value << "'.\n";
-            }
-            else
-                errorStream << "The specified server property '" << key << "' does not exist and was ignored.\n";
+            flag = _process_ex_prop(key,value);
+            // replace any commas with spaces
+            for (size_type i = 0;i<key.size();i++)
+                if (key[i] == ',')
+                    key[i] = ' ';
+            for (size_type i = 0;i<value.size();i++)
+                if (key[i] == ',')
+                    key[i] = ' ';
+            // error messages are destined for the client; use a comma as the separator to adhere to the protocol
+            if (flag == _prop_process_bad_key)
+                errorStream << "Warning: the specified option '" << key << "' does not exist and was ignored.,";
+            else if (flag == _prop_process_bad_value)
+                errorStream << "Warning: the specified option '" << key << "' cannot be assigned the value '" << value << "'.,";
         }
     }
-    stream.remove_extra_delimiter("-=");
-    stream.delimit_whitespace(true);
+    inputStream.remove_extra_delimiter('=');
 }
-bool minecraft_server_info_ex::set_prop(const str& name,const str& value)
+bool minecraft_server_info::set_prop(const str& key,const str& value)
 {
-    {
-        boolean_prop* pprop = _properties.booleanProps.lookup(name.c_str());
-        if (pprop != NULL)
-            return pprop->set_value(value);
-    }
-    {
-        numeric_prop* pprop = _properties.numericProps.lookup(name.c_str());
-        if (pprop != NULL)
-            return pprop->set_value(value);
-    }
-    {
-        string_prop* pprop = _properties.stringProps.lookup(name.c_str());
-        if (pprop != NULL)
-            return pprop->set_value(value);
-    }
-    return false;
+    // try the normal server.properties file property list then the extended list
+    if (_process_ex_prop(key,value)!=_prop_process_success && _process_prop(key,value)!=_prop_process_success)
+        return false;
+    return true;
 }
-void minecraft_server_info_ex::put_props(rstream& stream) const
+minecraft_server_info::_prop_process_flag minecraft_server_info::_process_ex_prop(const str& key,const str& value)
 {
-    for (size_type i = 0;i<_properties.booleanProps.size();i++)
-        _properties.booleanProps[i]->put(stream), stream << newline;
-    for (size_type i = 0;i<_properties.numericProps.size();i++)
-        _properties.numericProps[i]->put(stream), stream << newline;
-    for (size_type i = 0;i<_properties.stringProps.size();i++)
-        _properties.stringProps[i]->put(stream), stream << newline;
+    const_rstringstream ss(value);
+    if (key == "server-time") // qword: how long the mcraft server stays alive in seconds
+    {
+        if (!(ss >> serverTime))
+            return _prop_process_bad_value;
+        return _prop_process_success;
+    }
+    return _prop_process_bad_key;
 }
-/*static*/ void minecraft_server_info_ex::_strip(str& item)
+minecraft_server_info::_prop_process_flag minecraft_server_info::_process_prop(const str&,const str&)
+{
+    // do nothing; there are no more properties
+    // to process in this context
+    return _prop_process_undefined;
+}
+void minecraft_server_info::_put_props(rstream&) const
+{
+    // do nothing
+}
+/*static*/ void minecraft_server_info::_strip(str& item)
 {
     str tmp;
     size_type i, j;
@@ -147,8 +122,53 @@ void minecraft_server_info_ex::put_props(rstream& stream) const
     }
 }
 
+// minecraft_controller::minecraft_server_info_ex
+
+minecraft_server_info::_prop_process_flag minecraft_server_info_ex::_process_prop(const str& key,const str& value)
+{
+    // check the three different types of properties
+    {
+        boolean_prop* pprop = _properties.booleanProps.lookup(key.c_str());
+        if (pprop != NULL)
+        {
+            if ( !pprop->set_value(value) )
+                return _prop_process_bad_value;
+            return _prop_process_success;
+        }
+    }
+    {
+        numeric_prop* pprop = _properties.numericProps.lookup(key.c_str());
+        if (pprop != NULL)
+        {
+            if ( !pprop->set_value(value) )
+                return _prop_process_bad_value;
+            return _prop_process_success;
+        }
+    }
+    {
+        string_prop* pprop = _properties.stringProps.lookup(key.c_str());
+        if (pprop != NULL)
+        {
+            if ( !pprop->set_value(value) )
+                return _prop_process_bad_value;
+            return _prop_process_success;
+        }
+    }
+    return _prop_process_bad_key;
+}
+void minecraft_server_info_ex::_put_props(rstream& stream) const
+{
+    for (size_type i = 0;i<_properties.booleanProps.size();i++)
+        _properties.booleanProps[i]->put(stream), stream << newline;
+    for (size_type i = 0;i<_properties.numericProps.size();i++)
+        _properties.numericProps[i]->put(stream), stream << newline;
+    for (size_type i = 0;i<_properties.stringProps.size();i++)
+        _properties.stringProps[i]->put(stream), stream << newline;
+}
+
 // minecraft_controller::minecraft_server
 
+/*static*/ dword minecraft_server::_idCount = 0;
 /*static*/ short minecraft_server::_handlerRef = 0;
 /*static*/ qword minecraft_server::_alarmTick = 0;
 minecraft_server::minecraft_server()
@@ -168,6 +188,7 @@ minecraft_server::minecraft_server()
         ++_handlerRef;
     }
     // initialize per process attributes
+    _internalID = 0;
     _threadID = -1;
     _processID = -1;
     _threadCondition = false;
@@ -273,17 +294,8 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         if (::chdir( p.get_full_name().c_str() ) != 0)
             _exit((int)mcraft_start_server_filesystem_error);
         // if creating a new server, attempt to create the server.properties file
-        if (info.isNew)
-        {
-            file_stream fstream("server.properties");
-            if ( !fstream.get_device().is_valid_context() )
-                _exit((int)mcraft_start_server_filesystem_error);
-            // insert any override properties
-            if (_defaultPort.length()>0 && !info.set_prop("server-port",_defaultPort))
-                _exit((int)mcraft_start_server_filesystem_error);
-            // write props to properties file
-            info.put_props(fstream);
-        }
+        if (info.isNew && !_create_server_properties_file(info))
+            _exit((int)mcraft_start_server_filesystem_error);
         // prepare execve arguments
         int top = 0;
         char* pstr = &_argumentsBuffer[0];
@@ -300,6 +312,8 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         args[top++] = NULL;
         // duplicate pipe as standard IO
         _iochannel.standard_duplicate();
+        // send standard error to a file
+
         // execute program
         if (::execve(_program.c_str(),args,environ) == -1)
             _exit((int)mcraft_start_server_process_fail);
@@ -315,7 +329,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         if (_iochannel.get_last_operation_status()==no_input // child wasn't able to start properly
             || _iochannel.get_last_operation_status()==bad_read)
         {
-            // close the pipe and read the child process
+            // close the pipe and reap the child process
             int wstatus;
             _iochannel.close();
             if (::waitpid(pid,&wstatus,0) != pid) // this should happen sooner rather than never...
@@ -324,11 +338,16 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
                 return (minecraft_server_start_condition)WEXITSTATUS(wstatus);
             return mcraft_start_failure_unknown;
         }
+        // set per-process attributes
+        _internalName = info.internalName;
+        _internalID = ++_idCount;
         _processID = pid;
         _uid = info.uid;
         _guid = info.guid;
         _elapsed = 0;
         _threadCondition = true;
+        // assign any override properties in minecraft_info instance
+        _check_override_options(info);
         // create io thread
         if (::pthread_create(&_threadID,NULL,&minecraft_server::_io_thread,this) != 0)
         {
@@ -393,6 +412,8 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
         }
         // put every "per-server" attribute back in an invalid state
         _iochannel.close();
+        _internalName.clear();
+        _internalID = 0;
         _processID = -1;
         _threadID = -1;
         _threadExit = mcraft_noexit;
@@ -476,6 +497,20 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
     }
     // let another context manage waiting on the process
     return &pserver->_threadExit;
+}
+bool minecraft_server::_create_server_properties_file(minecraft_server_info& info)
+{
+    file_stream fstream("server.properties");
+    if ( !fstream.get_device().is_valid_context() || /*insert any override properties*/ (_defaultPort.length()>0 && !info.set_prop("server-port",_defaultPort)) )
+        return false;
+    // write props to properties file
+    info.put_props(fstream);
+    return true;
+}
+void minecraft_server::_check_override_options(const minecraft_server_info& info)
+{
+    if (info.serverTime != 0)
+        _maxSeconds = info.serverTime;
 }
 
 rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::minecraft_server_start_condition condition)
@@ -568,7 +603,7 @@ server_handle::server_handle()
     _mutex.lock();
     for (size_type i = 0;i<_handles.size();i++)
     {
-        if (_handles[i]->pserver!=NULL && (_handles[i]->pserver->_uid==uid || _handles[i]->pserver->_guid==guid))
+        if (_handles[i]->pserver!=NULL && (_handles[i]->pserver->_uid==uid || _handles[i]->pserver->_guid==guid || uid==0/*is root*/ || guid==0))
         {
             _handles[i]->_issued = true;
             outList.push_back(_handles[i]);
@@ -577,7 +612,7 @@ server_handle::server_handle()
     _mutex.unlock();
     return outList.size() > 0;
 }
-/*static*/ void minecraft_server_manager::print_servers(rstream& stream)
+/*static*/ void minecraft_server_manager::print_servers(rstream& stream,int uid,int guid)
 {
     bool noneFound = true;
     _mutex.lock();
@@ -601,13 +636,14 @@ server_handle::server_handle()
                 hoursLeft = var / 3600;
                 var = var % 3600;
                 minutesLeft = var / 60;
-                secondsLeft = var % 60;       
+                secondsLeft = var % 60;
             }
             else
                 hoursLeft = -1;
-            stream << "minecraft-server: pid=" << _handles[i]->pserver->_processID 
-                   << ": user=" << (userInfo==NULL ? "unknown" : userInfo->pw_name) 
-                   << ": time=";
+            stream << _handles[i]->pserver->_internalName << ": id=" << _handles[i]->pserver->_internalID
+                   << " pid=" << _handles[i]->pserver->_processID 
+                   << " user=" << (userInfo==NULL ? "unknown" : userInfo->pw_name)
+                   << " time=";
             if (hoursLeft == -1)
                 stream << "not-running";
             else
@@ -620,6 +656,10 @@ server_handle::server_handle()
             stream << ','; // follow the protocol: use a comma to separate elements
             noneFound = false;
         }
+    }
+    // print out information for an authenticated user
+    if (uid>-1 || guid>-1)
+    {
     }
     if (noneFound)
         stream << "No active servers running at this time";
@@ -667,6 +707,8 @@ server_handle::server_handle()
             {
                 // the server quit (most likely from a timeout or in-game event)
                 // call its destructor (cleanly ends the server) and free the memory
+                // if the server was already started, call end such that we can record its
+                // exit condition
                 if ( _handles[i]->pserver->was_started() )
                     standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() << endline;
                 delete _handles[i]->pserver;

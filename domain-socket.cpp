@@ -24,11 +24,16 @@ domain_socket::domain_socket_accept_condition domain_socket::accept(domain_socke
         int fd = ::accept(pres->interpret_as<int>(),NULL,NULL);
         if (fd != -1)
         {
-            dsnew._input = new io_resource;
-            dsnew._output = new io_resource(false);
-            dsnew._input->assign(fd);
-            dsnew._output->assign(fd);
-            dsnew._lastOp = no_operation;
+            io_resource* input, *output;
+            input = new io_resource;
+            output = new io_resource(false);
+            input->assign(fd);
+            output->assign(fd);
+            // assign io contexts to device
+            dsnew._assign(input,output);
+            // release our reference to the handles
+            --_ResourceRef(input);
+            --_ResourceRef(output);
             // assign a unique id to represent the connection
             dsnew._id = _idTop++;
             return domain_socket_accepted;
@@ -38,7 +43,6 @@ domain_socket::domain_socket_accept_condition domain_socket::accept(domain_socke
         else
             throw domain_socket_error();
     }
-    dsnew._lastOp = no_device;
     return domain_socket_nodevice;
 }
 bool domain_socket::connect(const char* path)
@@ -74,7 +78,7 @@ bool domain_socket::shutdown()
     }
     return false;
 }
-void domain_socket::_openEvent(const char* deviceID,io_access_flag mode,void**,dword)
+void domain_socket::_openEvent(const char* deviceID,io_access_flag mode,io_resource** pinput,io_resource** poutput,void**,dword)
 {
     int fd;
     // create socket
@@ -113,13 +117,13 @@ void domain_socket::_openEvent(const char* deviceID,io_access_flag mode,void**,d
         // create device resources
         if (mode & read_access)
         {
-            _input = new io_resource;
-            _input->assign(fd);
+            *pinput = new io_resource;
+            (*pinput)->assign(fd);
         }
         if (mode & write_access)
         {
-            _output = new io_resource(_input == NULL);
-            _output->assign(fd);
+            *poutput = new io_resource(*pinput == NULL);
+            (*poutput)->assign(fd);
         }
     }
     else
@@ -129,9 +133,10 @@ void domain_socket::_readAll(generic_string& sbuf) const
 {
     if ( is_valid_input() )
     {
+        // I don't anticipate huge amounts of data being processed
         char buffer[10000];
         read(buffer,10000);
-        for (size_type i = 0;i<_byteCount;i++)
+        for (size_type i = 0;i<get_last_byte_count();i++)
             sbuf.push_back(buffer[i]);
     }
 }

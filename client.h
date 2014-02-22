@@ -29,6 +29,7 @@ namespace minecraft_controller
 
         bool message_loop();
         bool command_login(rtypes::rstream&);
+        bool command_logout(rtypes::rstream&);
         bool command_start(rtypes::rstream&);
         bool command_status(rtypes::rstream&);
         bool command_stop(rtypes::rstream&);

@@ -103,24 +103,25 @@ bool controller_client::message_loop()
         str command;
         lineStream >> command;
         rutil_to_lower_ref(command);
-        if (uid == -1) // user is not logged in
-        {
-            if (command == "login")
-                command_login(lineStream);
-            else
-                send_message("error") << "Permission denied: please log in" << endline;
-        }
-        else // user is logged in
+        // these commands can be executed without login status
+        if (command == "login")
+            command_login(lineStream);
+        else if (command == "status")
+            command_status(lineStream);
+        // the commands can only be executed with login status
+        else if (uid >= 0) // user is logged in
         {
             if (command == "start")
                 command_start(lineStream);
-            else if (command == "status")
-                command_status(lineStream);
             else if (command == "stop")
                 command_stop(lineStream);
+            else if (command == "logout")
+                command_logout(lineStream);
             else
                 send_message("error") << "Command `" << command << "' is not understood" << endline;
         }
+        else
+            send_message("error") << "Permission denied: please log in" << endline;
     }
     return false;
 }
@@ -132,13 +133,13 @@ bool controller_client::command_login(rtypes::rstream& stream) // handles `login
     // check fields
     if (username.length() == 0)
     {
-        send_message("error") << "Required parameter for username missing" << endline;
+        send_message("error") << "Required parameter 'username' missing" << endline;
         client_log(standardLog) << "authentication failure: client didn't supply username" << endline;
         return false;
     }
     if (password.length() == 0)
     {
-        send_message("error") << "Required parameter for password missing" << endline;
+        send_message("error") << "Required parameter 'password' missing" << endline;
         client_log(standardLog) << "authentication failure: client didn't supply password" << endline;
         return false;
     }
@@ -176,26 +177,35 @@ bool controller_client::command_login(rtypes::rstream& stream) // handles `login
     client_log(standardLog) << "client authenticated successfully as `" << username << '\'' << endline;
     return true;
 }
-
+bool controller_client::command_logout(rstream&)
+{
+    uid = -1;
+    guid = -1;
+    homedir.clear();
+    send_message("message") << "Successful logout" << endline;
+    return true;
+}
 bool controller_client::command_start(rstream& stream)
 {
     str s;
+    rstringstream errors;
     minecraft_server_info* pinfo;
     // attempt to read arguments
     stream >> s;
     if (rutil_to_lower(s) == "create")
     {
-        rstringstream errors;
         pinfo = new minecraft_server_info_ex;
         stream >> pinfo->internalName;
         pinfo->isNew = true;
-        pinfo->read_props(stream,errors); // read and parse options
+
     }
     else
     {
         pinfo = new minecraft_server_info;
         pinfo->internalName = s;
+        pinfo->isNew = false;
     }
+    pinfo->read_props(stream,errors); // read and parse options
     if (pinfo->internalName.length() == 0)
     {
         send_message("error") << "Bad command syntax: usage: `start [create] server-name [options]'" << endline;
@@ -211,19 +221,53 @@ bool controller_client::command_start(rstream& stream)
     handle->set_clientid( connection.get_device().get_accept_id() );
     auto cond = handle->pserver->begin(*pinfo);
     client_log(standardLog) << cond << endline;
-    send_message("message") << cond << endline;
+    if ( errors.has_input() )
+        send_message("list") << cond << ',' << errors.get_device() << endline;
+    else
+        send_message("message") << cond << endline;
+
     minecraft_server_manager::attach_server(handle);
     delete pinfo;
     return true;
 }
 bool controller_client::command_status(rstream&)
 {
-    minecraft_server_manager::print_servers( send_message("message") );
+    minecraft_server_manager::print_servers(send_message("list"),uid,guid);
     return true;
 }
-bool controller_client::command_stop(rstream&)
+bool controller_client::command_stop(rstream& stream)
 {
-    return false;
+    dword id;
+    dynamic_array<server_handle*> servers;
+    if ( !minecraft_server_manager::lookup_auth_servers(uid,guid,servers) )
+    {
+        send_message("message") << "There are no active servers running to stop" << endline;
+        return false;
+    }
+    stream >> id;
+    if ( !stream.get_input_success() )
+    {
+        // return regulation of minecraft server(s) to the manager
+        minecraft_server_manager::attach_server(&servers[0],servers.size());
+        send_message("error") << "Bad command syntax: usage: `stop [serverID]'" << endline;
+        return false;
+    }
+    size_type i = 0;
+    while (i<servers.size() && servers[i]->pserver->get_internal_id()!=id)
+        ++i;
+    if (i >= servers.size())
+    {
+        // return regulation of minecraft server(s) to the manager
+        minecraft_server_manager::attach_server(&servers[0],servers.size());
+        send_message("error") << "Error: no server was found with id=" << id << " that you own" << endline;
+        return false;
+    }
+    auto status = servers[i]->pserver->end();
+    send_message("message") << status << endline;
+    client_log(standardLog) << status << endline;
+    // return regulation of minecraft server(s) to the manager
+    minecraft_server_manager::attach_server(&servers[0],servers.size());
+    return true;
 }
 inline
 rstream& controller_client::client_log(rstream& stream)

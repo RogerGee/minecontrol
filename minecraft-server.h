@@ -16,32 +16,58 @@ namespace minecraft_controller
         minecraft_server_info();
         virtual ~minecraft_server_info() {}
 
+        // attributes for server startup: these determine the context in which a minecraft
+        // server runs or is created
         bool isNew; // request (if possible) that a new server be made with the specified name
         rtypes::str internalName; // corresponds to the directory that contains the Minecraft server files
         const char* homeDirectory; // home directory of user currently logged in
         int uid, guid; // associated user and group id of currently logged-in user
 
+        // extended properties: these properties extend those found in server.properties, often
+        // implementing a feature provide by this network server program; some properties may
+        // override default settings for a 'minecraft_server' read from the minecontrol.init file
+        rtypes::qword serverTime; // number of seconds of allowed server run-time
+
         // attempts to read server properties until end-of-stream; the properties
         // should be formatted like so: --key=value; any errors are written in a human
-        // readable fashion to 'errorStream'
-        virtual void read_props(rtypes::rstream&,rtypes::rstream& errorStream);
+        // readable fashion to 'errorStream'; this operation processes both normal properties
+        // used in the 'server.properties' file and extended properties used by this server program
+        void read_props(rtypes::rstream& inputStream,rtypes::rstream& errorStream);
 
-        virtual bool set_prop(const rtypes::str& name,const rtypes::str& value);
+        // looks up the property with the specified name and assigns it the specified
+        // value; false is returned if either the property didn't exist or if value
+        // was incorrect; this operation processes both normal property names (server.properties file)
+        // and extended property names
+        bool set_prop(const rtypes::str& key,const rtypes::str& value);
 
         // writes properties in the correct format for the `server.properties'
-        // file used by the minecraft server process
-        virtual void put_props(rtypes::rstream&) const;
+        // file used by the minecraft server process; only properties that
+        // exist in the server.properties file are included
+        void put_props(rtypes::rstream& stream) const
+        { _put_props(stream); }
+    protected:
+        enum _prop_process_flag
+        {
+            _prop_process_success,
+            _prop_process_bad_key,
+            _prop_process_bad_value,
+            _prop_process_undefined
+        };
+    private:
+        _prop_process_flag _process_ex_prop(const rtypes::str& key,const rtypes::str& value);
+        virtual _prop_process_flag _process_prop(const rtypes::str& key,const rtypes::str& value);
+        virtual void _put_props(rtypes::rstream&) const;
+
+        static void _strip(rtypes::str&);
     };
 
     struct minecraft_server_info_ex : minecraft_server_info
     {
-        virtual void read_props(rtypes::rstream&,rtypes::rstream& errorStream);
-        virtual bool set_prop(const rtypes::str&,const rtypes::str&);
-        virtual void put_props(rtypes::rstream&) const;
     private:
         minecraft_server_property_list _properties;
 
-        static void _strip(rtypes::str&);
+        virtual _prop_process_flag _process_prop(const rtypes::str& key,const rtypes::str& value);
+        virtual void _put_props(rtypes::rstream&) const;
     };
 
     class minecraft_server_manager;
@@ -100,13 +126,21 @@ namespace minecraft_controller
         { return _processID != -1; }
         bool is_running() volatile
         { return _threadCondition; }
+
+        rtypes::str get_internal_name() const
+        { return _internalName; }
+        rtypes::dword get_internal_id() const
+        { return _internalID; }
     private:
+        static rtypes::dword _idCount;
         static short _handlerRef;
         static rtypes::qword _alarmTick;
         static void _alarm_handler(int);
         static void* _io_thread(void*);
 
         // per server attributes
+        rtypes::str _internalName;
+        rtypes::dword _internalID;
         pthread_t _threadID;
         pid_t _processID;
         pipe _iochannel;
@@ -121,6 +155,10 @@ namespace minecraft_controller
         rtypes::byte _shutdownCountdown; // the number of seconds to wait for the server to shutdown before killing it
         rtypes::qword _maxSeconds; // the number of seconds to allow the server to run before auto-shutdown
         rtypes::str _defaultPort; // if non-empty, override this port if creating a new server configuration
+
+        // helpers
+        bool _create_server_properties_file(minecraft_server_info&);
+        void _check_override_options(const minecraft_server_info&);
     };
 
     rtypes::rstream& operator <<(rtypes::rstream&,minecraft_server::minecraft_server_start_condition);
@@ -165,9 +203,10 @@ namespace minecraft_controller
         // the server handles are checked out (detached from the system)
         static bool lookup_auth_servers(int uid,int guid,rtypes::dynamic_array<server_handle*>& outList);
 
-        // prints out server all information on the specified rstream; this
-        // includes servers that are not owned by a certain user
-        static void print_servers(rtypes::rstream&);
+        // prints out server all information on the specified rstream; if uid is not -1, then
+        // additional information that is accessible to an authenticated user might be included;
+        // this mostly includes cached information, which is released after insertion
+        static void print_servers(rtypes::rstream&,int uid = -1,int guid = -1);
 
         // starts up the server manager system
         static void startup_server_manager();

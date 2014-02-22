@@ -19,7 +19,7 @@ static const char* const DOMAIN_NAME = "minecraft-control";
 
 // globals
 const char* minecraft_controller::PROGRAM_NAME;
-const char* const minecraft_controller::PROGRAM_VERSION = "0.3 (Beta Test)";
+const char* const minecraft_controller::PROGRAM_VERSION = "0.4 (Beta Test)";
 minecraft_controller_log_stream minecraft_controller::standardLog;
 static domain_socket local;
 
@@ -45,12 +45,12 @@ int main(int,const char* argv[])
     // set up signal handler for TERM and INT events
     if (::signal(SIGTERM,&terminate_handler) == SIG_ERR)
     {
-        standardLog << "cannot create signal handler for SIGTERM" << endline;
+        standardLog << "fatal: cannot create signal handler for SIGTERM" << endline;
         _exit(1);
     }
     if (::signal(SIGINT,&terminate_handler) == SIG_ERR)
     {
-        standardLog << "cannot create signal handler for SIGINT" << endline;
+        standardLog << "fatal: cannot create signal handler for SIGINT" << endline;
         _exit(1);
     }
 
@@ -76,7 +76,7 @@ void daemonize()
     pid_t pid = ::fork();
     if (pid == -1)
     {
-        standardLog << "cannot fork a child process" << endline;
+        standardLog << "fatal: cannot fork a child process" << endline;
         ::_exit(1);
     }
     if (pid == 0) // child process stays alive
@@ -84,7 +84,7 @@ void daemonize()
         // ensure that the process will have no controlling terminal
         if (::setsid() == -1)
         {
-            standardLog << "cannot become leader of new session" << endline;
+            standardLog << "fatal: cannot become leader of new session" << endline;
             ::_exit(1);
         }
         // reset umask
@@ -99,24 +99,27 @@ void daemonize()
         fdNull = ::open("/dev/null",O_RDWR);
         if (fd == -1)
         {
-            standardLog << "cannot open log file";
+            standardLog << "fatal: cannot open log file";
             _exit(1);
         }
         if (fdNull == -1)
         {
-            standardLog << "cannot open null device" << endline;
+            standardLog << "fatal: cannot open null device" << endline;
             ::_exit(1);
         }
         if (::dup2(fdNull,STDIN_FILENO)!=STDIN_FILENO || ::dup2(fd,STDOUT_FILENO)!=STDOUT_FILENO || ::dup2(fd,STDERR_FILENO)!=STDERR_FILENO)
         {
-            standardLog << "cannot replace standard IO" << endline;
+            standardLog << "fatal: cannot replace standard IO" << endline;
             ::_exit(1);
         }
         ::close(fd);
         ::close(fdNull);
     }
     else
+    {
+        stdConsole << '[' << pid << "] " << PROGRAM_NAME << " started" << endline;
         ::_exit(0);
+    }
 }
 
 void terminate_handler(int sig)
@@ -131,7 +134,7 @@ bool local_operation()
     // create domain socket for client CLI application communication
     if ( !local.open(DOMAIN_NAME) )
     {
-        standardLog << "cannot open domain socket for minecraft control" << endline;
+        standardLog << "fatal: cannot open domain socket for minecraft control" << endline;
         return false;
     }
     // accept incoming connections
