@@ -8,7 +8,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include "minecraft-server.h"
-#include "client.h"
+#include "minecontrol-client.h"
 #include "minecraft-controller.h"
 using namespace rtypes;
 using namespace minecraft_controller;

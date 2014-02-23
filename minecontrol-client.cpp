@@ -1,6 +1,6 @@
-// client.cpp
+// minecontrol-client.cpp
 #define _XOPEN_SOURCE // get `crypt'
-#include "client.h"
+#include "minecontrol-client.h"
 #include <unistd.h>
 #include <pwd.h>
 #include <shadow.h>

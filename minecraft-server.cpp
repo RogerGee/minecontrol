@@ -198,7 +198,7 @@ minecraft_server::minecraft_server()
     _guid = -1;
     // set default attributes before attempting
     // to load them from file
-    _program = "/home/roger/code/projects/minecraft-controller/test/test"/*"/usr/bin/java"*/; // java program default
+    _program = "/usr/bin/java"; // java program default
     _argumentsBuffer += "-Xmx1024M"; // defaults for minecraft: -Xmx1024M -Xms1024M -jar minecraft_server.jar nogui
     _argumentsBuffer.push_back(0);
     _argumentsBuffer += "-Xms1024M";
@@ -457,7 +457,7 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
             if ( WIFEXITED(status) ) // assume the process was quit by an in-game operator
                 pserver->_threadExit = mcraft_exit_ingame;
             else
-                pserver->_threadExit = mcraft_exit_unknown;
+                pserver->_threadExit = mcraft_exit_unknown; // this will flag some sort of error
             pserver->_threadCondition = false;
             break;
         }
@@ -483,8 +483,12 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
         lastTick = _alarmTick;
     }
     // send the stop command if there's reason to 
-    // believe that the server is still running
-    if (pserver->_threadExit == mcraft_noexit)
+    // believe that the server is still running;
+    // do not try to put output on the pipe if
+    // status is exit_unknown since an error may
+    // have occurred and the server may not respond
+    // to data put on the pipe causing this thread to hang
+    if (pserver->_threadExit==mcraft_noexit && pserver->_threadExit!=mcraft_exit_unknown)
     {
         serverIO << "say Attention: a request has been made to close the server.\nsay Going down in...5" << endline;
         for (int c = 4;c>=1;--c)

@@ -1,6 +1,6 @@
-// client.h
-#ifndef CLIENT_H
-#define CLIENT_H
+// minecontrol-client.h
+#ifndef MINECONTROL_CLIENT_H
+#define MINECONTROL_CLIENT_H
 #include "rlibrary/rdynarray.h"
 #include "domain-socket.h"
 #include "mutex.h" // gets pthread

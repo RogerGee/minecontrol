@@ -1,3 +1,4 @@
+// minecontrol.cpp - minecraft-controller client application
 #include "rlibrary/rstdio.h"
 #include "rlibrary/rstringstream.h"
 #include "rlibrary/rutility.h"

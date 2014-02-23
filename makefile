@@ -1,17 +1,21 @@
 ####################################################################################################
-#  Makefile for project `minecraft-controller'                                                     # 
+#  Makefile for project `minecraft-controller'                                                     #
 ####################################################################################################
-.PHONY: debug install clean
+.PHONY: debug clean install uninstall
 
 # programs and options
+PROGRAM_NAME = minecontrold
+PROGRAM_NAME_DEBUG = minecontrold-debug
+OBJECT_DIRECTORY_NAME = obj/
+OBJECT_DIRECTORY_NAME_DEBUG = dobj/
 ifeq ($(MAKECMDGOALS),debug)
-PROGRAM = minecontrold-debug
+PROGRAM = $(PROGRAM_DEBUG)
 COMPILE = g++ -g -c -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-unused-variable -pedantic-errors --std=gnu++0x
-OBJECT_DIRECTORY = dobj/
+OBJECT_DIRECTORY = $(OBJECT_DIRECTORY_NAME_DEBUG)
 else
-PROGRAM = minecontrold
+PROGRAM = $(PROGRAM_NAME)
 COMPILE = g++ -c -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-unused-variable -pedantic-errors --std=gnu++0x
-OBJECT_DIRECTORY = obj/
+OBJECT_DIRECTORY = $(OBJECT_DIRECTORY_NAME)
 endif
 LINK = g++
 LIBRARY = -lrlibrary -pthread -lcrypt
@@ -24,24 +28,24 @@ MUTEX_H = mutex.h
 MINECRAFT_CONTROLLER_H = minecraft-controller.h
 MINECRAFT_SERVER_H = minecraft-server.h $(PIPE_H)
 MINECRAFT_SERVER_PROPERTIES_H = minecraft-server-properties.h minecraft-server-properties.tcc
-CLIENT_H = client.h $(DOMAIN_SOCKET_H) $(MUTEX_H) $(MINECRAFT_SERVER_H)
+MINECONTROL_CLIENT_H = minecontrol-client.h $(DOMAIN_SOCKET_H) $(MUTEX_H) $(MINECRAFT_SERVER_H)
 
 # object code
-OBJECTS = minecraft-controller.o minecraft-server.o minecraft-server-properties.o client.o domain-socket.o pipe.o mutex.o
+OBJECTS = minecraft-controller.o minecraft-server.o minecraft-server-properties.o minecontrol-client.o domain-socket.o pipe.o mutex.o
 
 # make objects relative to object directory
 OBJECTS := $(addprefix $(OBJECT_DIRECTORY),$(OBJECTS))
 
 all: $(OBJECT_DIRECTORY) $(PROGRAM)
-#make -C client
+	make -C client
 
 debug: $(OBJECT_DIRECTORY) $(PROGRAM)
-#make -C client
+	make -C client debug
 
 $(PROGRAM): $(OBJECTS)
 	$(LINK) $(OUT)$(PROGRAM) $(OBJECTS) $(LIBRARY)
 
-$(OBJECT_DIRECTORY)minecraft-controller.o: minecraft-controller.cpp $(MINECRAFT_SERVER_H) $(CLIENT_H) $(MINECRAFT_CONTROLLER_H)
+$(OBJECT_DIRECTORY)minecraft-controller.o: minecraft-controller.cpp $(MINECRAFT_SERVER_H) $(MINECONTROL_CLIENT_H) $(MINECRAFT_CONTROLLER_H)
 	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)minecraft-controller.o minecraft-controller.cpp
 
 $(OBJECT_DIRECTORY)minecraft-server.o: minecraft-server.cpp $(MINECRAFT_SERVER_H)
@@ -50,8 +54,8 @@ $(OBJECT_DIRECTORY)minecraft-server.o: minecraft-server.cpp $(MINECRAFT_SERVER_H
 $(OBJECT_DIRECTORY)minecraft-server-properties.o: minecraft-server-properties.cpp $(MINECRAFT_SERVER_PROPERTIES_H)
 	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)minecraft-server-properties.o minecraft-server-properties.cpp
 
-$(OBJECT_DIRECTORY)client.o: client.cpp $(CLIENT_H) $(MINECRAFT_CONTROLLER_H) $(MINECRAFT_SERVER_H)
-	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)client.o client.cpp
+$(OBJECT_DIRECTORY)minecontrol-client.o: minecontrol-client.cpp $(MINECONTROL_CLIENT_H) $(MINECRAFT_CONTROLLER_H) $(MINECRAFT_SERVER_H)
+	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)minecontrol-client.o minecontrol-client.cpp
 
 $(OBJECT_DIRECTORY)domain-socket.o: domain-socket.cpp $(DOMAIN_SOCKET_H)
 	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)domain-socket.o domain-socket.cpp
@@ -66,7 +70,17 @@ $(OBJECT_DIRECTORY):
 	mkdir $(OBJECT_DIRECTORY)
 
 clean:
-	if [ -d obj ]; then rm -r --verbose obj; fi;
-	if [ -d dobj ]; then rm -r --verbose dobj; fi;
-	if [ -f minecontrold ]; then rm --verbose minecontrold; fi;
-	if [ -f minecontrold-debug ]; then rm --verbose minecontrold-debug; fi;
+	if [ -d $(OBJECT_DIRECTORY_NAME) ]; then rm -r --verbose $(OBJECT_DIRECTORY_NAME); fi;
+	if [ -d $(OBJECT_DIRECTORY_NAME_DEBUG) ]; then rm -r --verbose $(OBJECT_DIRECTORY_NAME_DEBUG); fi;
+	if [ -f $(PROGRAM_NAME) ]; then rm --verbose $(PROGRAM_NAME); fi;
+	if [ -f $(PROGRAM_NAME_DEBUG) ]; then rm --verbose $(PROGRAM_NAME_DEBUG); fi;
+	make -C client clean
+
+install:
+	if [ -f $(PROGRAM_NAME) ]; then mv $(PROGRAM_NAME) /usr/local/bin; chmod go-rwx /usr/local/bin/$(PROGRAM_NAME); fi;
+	make -C client install
+
+uninstall:
+	if [ -f /usr/local/bin/$(PROGRAM_NAME) ]; then rm --verbose /usr/local/bin/$(PROGRAM_NAME); fi;
+	make -C client uninstall
+
