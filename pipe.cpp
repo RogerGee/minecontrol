@@ -54,7 +54,7 @@ void pipe::close_open()
         _fdOpenWrite = -1;
     }
 }
-void pipe::_openEvent(const char*,io_access_flag access,io_resource** pinput,io_resource** poutput,void**,dword)
+void pipe::_openEvent(const char*,io_access_flag access,io_resource** pinput,io_resource** poutput,void**,uint32)
 {
     // simulate full duplex mode by creating two pipes
     int pipe1[2]/*read*/, pipe2[2]/*write*/;

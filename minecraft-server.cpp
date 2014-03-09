@@ -80,7 +80,7 @@ bool minecraft_server_info::set_prop(const str& key,const str& value)
 minecraft_server_info::_prop_process_flag minecraft_server_info::_process_ex_prop(const str& key,const str& value)
 {
     const_rstringstream ss(value);
-    if (key == "server-time") // qword: how long the mcraft server stays alive in seconds
+    if (key == "server-time") // uint64: how long the mcraft server stays alive in seconds
     {
         if (!(ss >> serverTime))
             return _prop_process_bad_value;
@@ -168,9 +168,10 @@ void minecraft_server_info_ex::_put_props(rstream& stream) const
 
 // minecraft_controller::minecraft_server
 
-/*static*/ dword minecraft_server::_idCount = 0;
+/*static*/ set<uint32> minecraft_server::_idSet;
+/*static*/ mutex minecraft_server::_idSetProtect;
 /*static*/ short minecraft_server::_handlerRef = 0;
-/*static*/ qword minecraft_server::_alarmTick = 0;
+/*static*/ uint64 minecraft_server::_alarmTick = 0;
 minecraft_server::minecraft_server()
 {
     // set up shared handler and real timer if not already set up
@@ -340,7 +341,12 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         }
         // set per-process attributes
         _internalName = info.internalName;
-        _internalID = ++_idCount;
+        _internalID = 1;
+        _idSetProtect.lock();
+        while ( _idSet.contains(_internalID) )
+            ++_internalID;
+        _idSet.insert(_internalID);
+        _idSetProtect.unlock();
         _processID = pid;
         _uid = info.uid;
         _guid = info.guid;
@@ -431,7 +437,7 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
 {
     minecraft_server* pserver = reinterpret_cast<minecraft_server*>(pobj);
     pipe_stream serverIO(pserver->_iochannel); // open up pipe stream
-    qword lastTick = _alarmTick, timeVar;
+    uint64 lastTick = _alarmTick, timeVar;
     pserver->_threadExit = mcraft_noexit;
     while (pserver->_threadCondition)
     {
@@ -462,15 +468,15 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
             break;
         }
         // display time messages at regular intervals
-        if (pserver->_elapsed%3600 == 0)
-        {
-            timeVar = (pserver->_maxSeconds - pserver->_elapsed) / 3600;
+        timeVar = (pserver->_maxSeconds - pserver->_elapsed);
+        if (timeVar%3600 == 0)
+        {// show hours remaining
+            timeVar /= 3600;
             serverIO << "say Time status: " << timeVar << " hour" << (timeVar>1 ? "s " : " ")
                      << "remaining" << endline;
         }
-        timeVar = (pserver->_maxSeconds - pserver->_elapsed);
-        if (timeVar<3600 && timeVar%600==0)
-        {
+        else if ((timeVar<3600 && timeVar%600==0) || (timeVar<600 && timeVar%60==0))
+        {// show minutes remaining on ten-minute intervals (< 1 hour remaining) OR minute intervals (< 10 minutes remaining)
             timeVar /= 60;
             serverIO << "say Time status: " << timeVar << " minute" << (timeVar>1 ? "s " : " ")
                      << "remaining" << endline;
@@ -602,19 +608,26 @@ server_handle::server_handle()
         handles[i]->_issued = false;
     _mutex.unlock();
 }
-/*static*/ bool minecraft_server_manager::lookup_auth_servers(int uid,int guid,dynamic_array<server_handle*>& outList)
+/*static*/ minecraft_server_manager::auth_lookup_result minecraft_server_manager::lookup_auth_servers(int uid,int guid,dynamic_array<server_handle*>& outList)
 {
+    auth_lookup_result result = auth_lookup_none;
     _mutex.lock();
     for (size_type i = 0;i<_handles.size();i++)
     {
-        if (_handles[i]->pserver!=NULL && (_handles[i]->pserver->_uid==uid || _handles[i]->pserver->_guid==guid || uid==0/*is root*/ || guid==0))
+        if (_handles[i]->pserver != NULL)
         {
-            _handles[i]->_issued = true;
-            outList.push_back(_handles[i]);
+            if (_handles[i]->pserver->_uid==uid || _handles[i]->pserver->_guid==guid || uid==0/*is root*/ || guid==0)
+            {
+                _handles[i]->_issued = true;
+                outList.push_back(_handles[i]);
+                result = auth_lookup_found;
+            }
+            else if (result == auth_lookup_none)
+                result = auth_lookup_no_owned;
         }
-    }       
+    }
     _mutex.unlock();
-    return outList.size() > 0;
+    return result;
 }
 /*static*/ void minecraft_server_manager::print_servers(rstream& stream,int uid,int guid)
 {

@@ -9,7 +9,7 @@
 using namespace rtypes;
 using namespace minecraft_controller;
 
-/*static*/ qword domain_socket::_idTop = 1;
+/*static*/ uint64 domain_socket::_idTop = 1;
 domain_socket::domain_socket()
     : _path(NULL), _id(0)
 {
@@ -78,7 +78,7 @@ bool domain_socket::shutdown()
     }
     return false;
 }
-void domain_socket::_openEvent(const char* deviceID,io_access_flag mode,io_resource** pinput,io_resource** poutput,void**,dword)
+void domain_socket::_openEvent(const char* deviceID,io_access_flag mode,io_resource** pinput,io_resource** poutput,void**,uint32)
 {
     int fd;
     // create socket

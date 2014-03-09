@@ -237,21 +237,28 @@ bool controller_client::command_status(rstream&)
 }
 bool controller_client::command_stop(rstream& stream)
 {
-    dword id;
+    uint32 id;
     dynamic_array<server_handle*> servers;
-    if ( !minecraft_server_manager::lookup_auth_servers(uid,guid,servers) )
+    minecraft_server_manager::auth_lookup_result result;
+    // read off id
+    stream >> id;
+    if ( !stream.get_input_success() )
+    {
+        send_message("error") << "Bad command syntax: usage: `stop [serverID]'" << endline;
+        return false;
+    }
+    // ask the server manager for handles to running servers that the user can access
+    if ((result = minecraft_server_manager::lookup_auth_servers(uid,guid,servers)) == minecraft_server_manager::auth_lookup_none)
     {
         send_message("message") << "There are no active servers running to stop" << endline;
         return false;
     }
-    stream >> id;
-    if ( !stream.get_input_success() )
+    else if (result == minecraft_server_manager::auth_lookup_no_owned)
     {
-        // return regulation of minecraft server(s) to the manager
-        minecraft_server_manager::attach_server(&servers[0],servers.size());
-        send_message("error") << "Bad command syntax: usage: `stop [serverID]'" << endline;
+        send_message("message") << "You don't have permission to access any of the running servers" << endline;
         return false;
     }
+    // search through accessible servers; find the one with the specified id
     size_type i = 0;
     while (i<servers.size() && servers[i]->pserver->get_internal_id()!=id)
         ++i;
@@ -259,12 +266,14 @@ bool controller_client::command_stop(rstream& stream)
     {
         // return regulation of minecraft server(s) to the manager
         minecraft_server_manager::attach_server(&servers[0],servers.size());
-        send_message("error") << "Error: no server was found with id=" << id << " that you own" << endline;
+        send_message("error") << "Error: no server was found with id=" << id << "; you may not have permission to modify it" << endline;
         return false;
     }
     auto status = servers[i]->pserver->end();
     send_message("message") << status << endline;
-    client_log(standardLog) << status << endline;
+    // use the original id in log message to map closing server
+    // to the client session that started it
+    standardLog << '{' << servers[i]->get_clientid() << "} " << status << endline;
     // return regulation of minecraft server(s) to the manager
     minecraft_server_manager::attach_server(&servers[0],servers.size());
     return true;

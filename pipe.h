@@ -23,7 +23,7 @@ namespace minecraft_controller
         void close_open();
     private:
         // implement io_device interface
-        virtual void _openEvent(const char*,rtypes::io_access_flag,rtypes::io_resource**,rtypes::io_resource**,void**,rtypes::dword);
+        virtual void _openEvent(const char*,rtypes::io_access_flag,rtypes::io_resource**,rtypes::io_resource**,void**,rtypes::uint32);
         virtual void _readAll(rtypes::generic_string&) const;
         virtual void _closeEvent(rtypes::io_access_flag);
 

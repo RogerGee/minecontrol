@@ -27,15 +27,15 @@ namespace minecraft_controller
 
         const char* get_path() const
         { return _path; }
-        rtypes::qword get_accept_id() const // gets unique id for accepted connection socket
+        rtypes::uint64 get_accept_id() const // gets unique id for accepted connection socket
         { return _id; }
     private:
-        static rtypes::qword _idTop; // maintain count of connected clients
+        static rtypes::uint64 _idTop; // maintain count of connected clients
         const char* _path;
-        rtypes::qword _id;
+        rtypes::uint64 _id;
 
         // implement virtual io_device interface
-        virtual void _openEvent(const char*,rtypes::io_access_flag,rtypes::io_resource**,rtypes::io_resource**,void**,rtypes::dword);
+        virtual void _openEvent(const char*,rtypes::io_access_flag,rtypes::io_resource**,rtypes::io_resource**,void**,rtypes::uint32);
         virtual void _readAll(rtypes::generic_string&) const;
         virtual void _closeEvent(rtypes::io_access_flag);
     };
