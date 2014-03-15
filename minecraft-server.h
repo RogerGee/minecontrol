@@ -2,11 +2,11 @@
 #ifndef MINECRAFT_SERVER_H
 #define MINECRAFT_SERVER_H
 #include "minecraft-server-properties.h" // gets rstringstream
-#include <sys/types.h>
-#include "pipe.h"
-#include "mutex.h"
+#include "minecontrol-authority.h"
 #include "rlibrary/rdynarray.h"
 #include "rlibrary/rset.h"
+#include "pipe.h"
+#include "mutex.h"
 
 namespace minecraft_controller
 {
@@ -143,9 +143,10 @@ namespace minecraft_controller
         // per server attributes
         rtypes::str _internalName;
         rtypes::uint32 _internalID;
-        pthread_t _threadID;
-        pid_t _processID;
+        rtypes::ulong _threadID;
+        rtypes::int32 _processID;
         pipe _iochannel;
+        minecontrol_authority _authority;
         volatile bool _threadCondition;
         minecraft_server_exit_condition _threadExit; // (this just serves as a memory location that outlives _io_thread)
         rtypes::uint64 _elapsed;
@@ -160,7 +161,7 @@ namespace minecraft_controller
 
         // helpers
         bool _create_server_properties_file(minecraft_server_info&);
-        void _check_override_options(const minecraft_server_info&);
+        void _check_extended_options(const minecraft_server_info&);
     };
 
     rtypes::rstream& operator <<(rtypes::rstream&,minecraft_server::minecraft_server_start_condition);
@@ -228,7 +229,7 @@ namespace minecraft_controller
     private:
         static mutex _mutex;
         static rtypes::dynamic_array<server_handle*> _handles;
-        static pthread_t _threadID;
+        static rtypes::ulong _threadID;
         static volatile bool _threadCondition;
 
         static void* _manager_thread(void*);

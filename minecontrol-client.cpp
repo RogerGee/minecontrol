@@ -1,5 +1,5 @@
 // minecontrol-client.cpp
-#define _XOPEN_SOURCE // get `crypt'
+#define _XOPEN_SOURCE // get 'crypt'
 #include "minecontrol-client.h"
 #include <unistd.h>
 #include <pwd.h>
@@ -117,15 +117,17 @@ bool controller_client::message_loop()
                 command_stop(lineStream);
             else if (command == "logout")
                 command_logout(lineStream);
+            else if (command == "console")
+                command_console(lineStream);
             else
-                send_message("error") << "Command `" << command << "' is not understood" << endline;
+                send_message("error") << "Command '" << command << "' is not understood" << endline;
         }
         else
             send_message("error") << "Permission denied: please log in" << endline;
     }
     return false;
 }
-bool controller_client::command_login(rtypes::rstream& stream) // handles `login' requests
+bool controller_client::command_login(rtypes::rstream& stream) // handles 'login' requests
 {
     // read fields from message stream
     str username, password;
@@ -151,7 +153,7 @@ bool controller_client::command_login(rtypes::rstream& stream) // handles `login
     if (pwd == NULL)
     {
         send_message("error") << "Authentication failure: bad username" << endline;
-        client_log(standardLog) << "authentication failure: bad username `" << username << '\'' << endline;
+        client_log(standardLog) << "authentication failure: bad username '" << username << '\'' << endline;
         return false;
     }
     shadowPwd = getspnam( username.c_str() );
@@ -166,15 +168,15 @@ bool controller_client::command_login(rtypes::rstream& stream) // handles `login
         throw controller_client_error();
     if ( !rutil_strcmp(pencrypt,pwd->pw_passwd) )
     {
-        send_message("error") << "Authentication failure: bad password for user `" << username << '\'' << endline;
-        client_log(standardLog) << "authentication failure: bad password for user `" << username << '\'' << endline;
+        send_message("error") << "Authentication failure: bad password for user '" << username << '\'' << endline;
+        client_log(standardLog) << "authentication failure: bad password for user '" << username << '\'' << endline;
         return false;
     }
     uid = pwd->pw_uid;
     guid = pwd->pw_gid;
     homedir = pwd->pw_dir;
-    send_message("message") << "Authentication complete: logged in as `" << username << '\'' << endline;
-    client_log(standardLog) << "client authenticated successfully as `" << username << '\'' << endline;
+    send_message("message") << "Authentication complete: logged in as '" << username << '\'' << endline;
+    client_log(standardLog) << "client authenticated successfully as '" << username << '\'' << endline;
     return true;
 }
 bool controller_client::command_logout(rstream&)
@@ -208,7 +210,7 @@ bool controller_client::command_start(rstream& stream)
     pinfo->read_props(stream,errors); // read and parse options
     if (pinfo->internalName.length() == 0)
     {
-        send_message("error") << "Bad command syntax: usage: `start [create] server-name [options]'" << endline;
+        send_message("error") << "Bad command syntax: usage: 'start [create] server-name [option key=option value,option key=option value[,...]]'" << endline;
         delete pinfo;
         return false;
     }
@@ -244,18 +246,18 @@ bool controller_client::command_stop(rstream& stream)
     stream >> id;
     if ( !stream.get_input_success() )
     {
-        send_message("error") << "Bad command syntax: usage: `stop [serverID]'" << endline;
+        send_message("error") << "Bad command syntax: usage: 'stop [serverID]'" << endline;
         return false;
     }
     // ask the server manager for handles to running servers that the user can access
     if ((result = minecraft_server_manager::lookup_auth_servers(uid,guid,servers)) == minecraft_server_manager::auth_lookup_none)
     {
-        send_message("message") << "There are no active servers running to stop" << endline;
+        send_message("error") << "There are no active servers running to stop" << endline;
         return false;
     }
     else if (result == minecraft_server_manager::auth_lookup_no_owned)
     {
-        send_message("message") << "You don't have permission to access any of the running servers" << endline;
+        send_message("error") << "You don't have permission to access any of the running servers" << endline;
         return false;
     }
     // search through accessible servers; find the one with the specified id
@@ -276,6 +278,43 @@ bool controller_client::command_stop(rstream& stream)
     standardLog << '{' << servers[i]->get_clientid() << "} " << status << endline;
     // return regulation of minecraft server(s) to the manager
     minecraft_server_manager::attach_server(&servers[0],servers.size());
+    return true;
+}
+bool controller_client::command_console(rstream& stream)
+{
+    uint32 id;
+    dynamic_array<server_handle*> servers;
+    minecraft_server_manager::auth_lookup_result result;
+    // read off id
+    stream >> id;
+    if ( !stream.get_input_success() )
+    {
+        send_message("error") << "Bad command syntax: usage: 'stop [serverID]'" << endline;
+        return false;
+    }
+    // ask the server manager for handles to running servers that the user can access
+    if ((result = minecraft_server_manager::lookup_auth_servers(uid,guid,servers)) == minecraft_server_manager::auth_lookup_none)
+    {
+        send_message("error") << "There are no active servers running to stop" << endline;
+        return false;
+    }
+    else if (result == minecraft_server_manager::auth_lookup_no_owned)
+    {
+        send_message("error") << "You don't have permission to access any of the running servers" << endline;
+        return false;
+    }
+    // search through accessible servers; find the one with the specified id
+    size_type i = 0;
+    while (i<servers.size() && servers[i]->pserver->get_internal_id()!=id)
+        ++i;
+    if (i >= servers.size())
+    {
+        // return regulation of minecraft server(s) to the manager
+        minecraft_server_manager::attach_server(&servers[0],servers.size());
+        send_message("error") << "Error: no server was found with id=" << id << "; you may not have permission to modify it" << endline;
+        return false;
+    }
+
     return true;
 }
 inline

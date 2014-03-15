@@ -33,6 +33,7 @@ namespace minecraft_controller
         bool command_start(rtypes::rstream&);
         bool command_status(rtypes::rstream&);
         bool command_stop(rtypes::rstream&);
+        bool command_console(rtypes::rstream&);
 
         inline rtypes::rstream& client_log(rtypes::rstream&);
         inline rtypes::rstream& send_message(const char* command);

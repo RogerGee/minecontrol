@@ -29,9 +29,10 @@ MINECRAFT_CONTROLLER_H = minecraft-controller.h
 MINECRAFT_SERVER_H = minecraft-server.h $(PIPE_H)
 MINECRAFT_SERVER_PROPERTIES_H = minecraft-server-properties.h minecraft-server-properties.tcc
 MINECONTROL_CLIENT_H = minecontrol-client.h $(DOMAIN_SOCKET_H) $(MUTEX_H) $(MINECRAFT_SERVER_H)
+MINECONTROL_AUTHORITY_H = minecontrol-authority.h $(PIPE_H)
 
 # object code
-OBJECTS = minecraft-controller.o minecraft-server.o minecraft-server-properties.o minecontrol-client.o domain-socket.o pipe.o mutex.o
+OBJECTS = minecraft-controller.o minecraft-server.o minecraft-server-properties.o minecontrol-client.o minecontrol-authority.o domain-socket.o pipe.o mutex.o
 
 # make objects relative to object directory
 OBJECTS := $(addprefix $(OBJECT_DIRECTORY),$(OBJECTS))
@@ -56,6 +57,9 @@ $(OBJECT_DIRECTORY)minecraft-server-properties.o: minecraft-server-properties.cp
 
 $(OBJECT_DIRECTORY)minecontrol-client.o: minecontrol-client.cpp $(MINECONTROL_CLIENT_H) $(MINECRAFT_CONTROLLER_H) $(MINECRAFT_SERVER_H)
 	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)minecontrol-client.o minecontrol-client.cpp
+
+$(OBJECT_DIRECTORY)minecontrol-authority.o: minecontrol-authority.cpp $(MINECONTROL_AUTHORITY_H)
+	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)minecontrol-authority.o minecontrol-authority.cpp
 
 $(OBJECT_DIRECTORY)domain-socket.o: domain-socket.cpp $(DOMAIN_SOCKET_H)
 	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)domain-socket.o domain-socket.cpp

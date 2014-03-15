@@ -1,6 +1,8 @@
 // minecraft-server.cpp
 #include "minecraft-server.h"
 #include <cstring>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h> // for now
 #include <signal.h>
@@ -51,7 +53,7 @@ void minecraft_server_info::read_props(rstream& inputStream,rstream& errorStream
         // the server.properties file list; if not,
         // attempt the extended properties list
         _prop_process_flag flag = _process_prop(key,value);
-        if (flag != _prop_process_success)
+        if (flag==_prop_process_bad_key || flag==_prop_process_undefined)
         {
             flag = _process_ex_prop(key,value);
             // replace any commas with spaces
@@ -63,10 +65,10 @@ void minecraft_server_info::read_props(rstream& inputStream,rstream& errorStream
                     key[i] = ' ';
             // error messages are destined for the client; use a comma as the separator to adhere to the protocol
             if (flag == _prop_process_bad_key)
-                errorStream << "Warning: the specified option '" << key << "' does not exist and was ignored.,";
-            else if (flag == _prop_process_bad_value)
-                errorStream << "Warning: the specified option '" << key << "' cannot be assigned the value '" << value << "'.,";
+                errorStream << "Note: the specified option '" << key << "' does not exist or cannot be used and was ignored.,";
         }
+        if (flag == _prop_process_bad_value)
+            errorStream << "Error: the specified option '" << key << "' cannot be assigned the value '" << value << "'.,";
     }
     inputStream.remove_extra_delimiter('=');
 }
@@ -277,6 +279,8 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         // change process privilages
         if (::setresgid(info.guid,info.guid,info.guid)==-1 || ::setresuid(info.uid,info.uid,info.uid)==-1)
             _exit((int)mcraft_start_server_permissions_fail);
+        // change the process umask
+        ::umask(S_IWGRP | S_IWOTH);
         // change working directory to directory for minecraft server
         path p(info.homeDirectory);
         p += "minecraft";
@@ -313,8 +317,6 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         args[top++] = NULL;
         // duplicate pipe as standard IO
         _iochannel.standard_duplicate();
-        // send standard error to a file
-
         // execute program
         if (::execve(_program.c_str(),args,environ) == -1)
             _exit((int)mcraft_start_server_process_fail);
@@ -352,9 +354,11 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         _guid = info.guid;
         _elapsed = 0;
         _threadCondition = true;
-        // assign any override properties in minecraft_info instance
-        _check_override_options(info);
-        // create io thread
+        // assign any extended properties in minecraft_info instance
+        _check_extended_options(info);
+        // initialize the authority which will manage the minecraft server
+
+        // create io thread that will manage the basic status of the server process
         if (::pthread_create(&_threadID,NULL,&minecraft_server::_io_thread,this) != 0)
         {
             ::kill(pid,SIGKILL); // just in case
@@ -419,6 +423,9 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
         // put every "per-server" attribute back in an invalid state
         _iochannel.close();
         _internalName.clear();
+        _idSetProtect.lock();
+        _idSet.remove(_internalID);
+        _idSetProtect.unlock();
         _internalID = 0;
         _processID = -1;
         _threadID = -1;
@@ -435,9 +442,16 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
 }
 /*static*/ void* minecraft_server::_io_thread(void* pobj)
 {
+    // this thread is responsible for the basic input/output (including time management)
+    // functionality of managing the server process; occasionally, this 
+    // thread will write a message to the standard input of the server process;
+    // I consider this operation to always be atomic since I hopefully will
+    // never write more than the pipe buffer's size number of bytes (this way,
+    // I don't interfere with the authority object's control of the io channel)
     minecraft_server* pserver = reinterpret_cast<minecraft_server*>(pobj);
-    pipe_stream serverIO(pserver->_iochannel); // open up pipe stream
+    pipe_stream serverIO(pserver->_iochannel); // open up a pipe stream for this thread's use; we'll use it to interrupt players with annoying time-status alerts
     uint64 lastTick = _alarmTick, timeVar;
+    // use pserver->_threadExit to store exit result
     pserver->_threadExit = mcraft_noexit;
     while (pserver->_threadCondition)
     {
@@ -481,19 +495,14 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
             serverIO << "say Time status: " << timeVar << " minute" << (timeVar>1 ? "s " : " ")
                      << "remaining" << endline;
         }
-        // process mcraft output
-
         // sleep thread and update elapsed information
         ::sleep(1);
         pserver->_elapsed += _alarmTick - lastTick;
         lastTick = _alarmTick;
     }
-    // send the stop command if there's reason to 
-    // believe that the server is still running;
-    // do not try to put output on the pipe if
-    // status is exit_unknown since an error may
-    // have occurred and the server may not respond
-    // to data put on the pipe causing this thread to hang
+    // send the stop command if there's reason to believe that the server is still running;
+    // do not try to put output on the pipe if status is exit_unknown since an error may
+    // have occurred and the server may not respond to data put on the pipe causing this thread to hang
     if (pserver->_threadExit==mcraft_noexit && pserver->_threadExit!=mcraft_exit_unknown)
     {
         serverIO << "say Attention: a request has been made to close the server.\nsay Going down in...5" << endline;
@@ -517,7 +526,7 @@ bool minecraft_server::_create_server_properties_file(minecraft_server_info& inf
     info.put_props(fstream);
     return true;
 }
-void minecraft_server::_check_override_options(const minecraft_server_info& info)
+void minecraft_server::_check_extended_options(const minecraft_server_info& info)
 {
     if (info.serverTime != 0)
         _maxSeconds = info.serverTime;

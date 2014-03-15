@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <time.h>
 #include <string.h>
 #include "minecraft-server.h"
 #include "minecontrol-client.h"
@@ -19,7 +20,7 @@ static const char* const DOMAIN_NAME = "minecraft-control";
 
 // globals
 const char* minecraft_controller::PROGRAM_NAME;
-const char* const minecraft_controller::PROGRAM_VERSION = "0.4 (Beta Test)";
+const char* const minecraft_controller::PROGRAM_VERSION = "0.5 (Beta Test)";
 minecraft_controller_log_stream minecraft_controller::standardLog;
 static domain_socket local;
 
@@ -140,7 +141,7 @@ bool local_operation()
     // accept incoming connections
     while (true)
         // accept a connection
-        if (controller_client::accept_client(local) == NULL) // assume `local' was shutdown
+        if (controller_client::accept_client(local) == NULL) // assume 'local' was shutdown
             break;
     return true;
 }
@@ -153,9 +154,13 @@ minecraft_controller_log_stream::minecraft_controller_log_stream()
 }
 void minecraft_controller_log_stream::_outDevice()
 {
+    char sbuffer[40];
+    time_t tp;
+    ::time(&tp);
+    ::strftime(sbuffer,40,"%a %b %d %H:%M:%S",localtime(&tp));
     // send our local buffer to the standard console
     // add name and process id
-    stdConsole << PROGRAM_NAME 
+    stdConsole << '[' << sbuffer << "] " << PROGRAM_NAME 
                << '[' << ::getpid() << "]: ";
     stdConsole.place(*this);
     stdConsole.flush_output();

@@ -18,7 +18,7 @@ static const char* programName;
 // helpers
 static void echo(bool onState); // will become obsolete in future versions
 static bool check_status(io_device& device);
-static void server_message(rstream&);
+static bool server_message(rstream&);
 
 /* commands - a command function takes arguments from the
    first stream passed to it; it then issues a command 
@@ -26,7 +26,7 @@ static void server_message(rstream&);
    it; if no input is available, an interactive mode should
    be provided to obtain minimal arguments
  */
-static void login(rstream&,rstream&); // these commands provide an interactive mode for input
+static void login(rstream&,rstream&,str&); // these commands provide an interactive mode for input
 static void start(rstream&,rstream&);
 static void status(rstream&,rstream&);
 static void stop(rstream&,rstream&);
@@ -34,6 +34,7 @@ static void any_command(const str& command,rstream&,rstream&); // this command d
 
 int main(int,const char* argv[])
 {
+    str uname;
     str serverName;
     // for now, just use a local domain
     // socket connection to talk to the server
@@ -62,6 +63,8 @@ int main(int,const char* argv[])
     {
         str command;
         rstringstream ss;
+        if (uname.length() > 0)
+            stdConsole << uname << '@';
         stdConsole << serverName << ">> ";
         stdConsole.getline( ss.get_device() );
         ss >> command; // get first token
@@ -71,7 +74,7 @@ int main(int,const char* argv[])
         if (command == "quit")
             break;
         if (command == "login")
-            login(ss,sockstream);
+            login(ss,sockstream,uname);
         else if (command == "start")
             start(ss,sockstream);
         else if (command == "status")
@@ -82,9 +85,14 @@ int main(int,const char* argv[])
             any_command(command,ss,sockstream);
 
         // handle response from server
+        bool serverSuccess; // did the server encounter an error or not?
         ss.clear();
         sockstream.getline( ss.get_device() );
-        server_message(ss);
+        serverSuccess = server_message(ss);
+
+        // handle post-response actions
+        if ((command=="login" && !serverSuccess) || command=="logout")
+            uname.clear();
 
         if ( !check_status(sock) )
             break; // server most likely closed connection
@@ -127,16 +135,22 @@ bool check_status(io_device& device)
     return true;
 }
 
-void server_message(rstream& inputStream)
+bool server_message(rstream& inputStream)
 {
     str command;
     inputStream.add_extra_delimiter("|,");
     inputStream.delimit_whitespace(false);
     inputStream >> command;
-    if (command=="message" || command=="error")
+    if (command == "message")
     {
         inputStream >> command;
         stdConsole << command << newline;
+    }
+    else if (command == "error")
+    {
+        inputStream >> command;
+        stdConsole << command << newline;
+        return false;
     }
     else if (command == "list")
     {
@@ -147,11 +161,15 @@ void server_message(rstream& inputStream)
             stdConsole << item << newline;
         }
     }
+    return true;
 }
 
-void login(rstream& inputStream,rstream& comStream)
+void login(rstream& inputStream,rstream& comStream,str& username)
 {
-    str username, password;
+    // this function will effectively output the username; it's
+    // up to the calling context to determine if the login attempt
+    // was successful
+    str password;
     // try to read username from original command line
     inputStream >> username;
     if (username.length() == 0)
@@ -192,8 +210,39 @@ void start(rstream& inputStream,rstream& comStream)
             modifier.clear();
         stdConsole << "Enter server name: ";
         stdConsole >> name;
-        stdConsole << "Enter property list: ";
-        stdConsole.getline(props);
+        stdConsole << "Enter properties, one on each line; type 'stop' to finish - \n";
+        while (true)
+        {
+            str line;
+            size_type i;
+            stdConsole << "\t> ";
+            stdConsole.getline(line);
+            if (rutil_to_lower(line) == "stop")
+                break;
+            i = 0;
+            while (i < line.length())
+            {
+                if (line[i] == '=')
+                    break;
+                ++i;
+            }
+            if (i==0 || i>=line.length())
+            {
+                stdConsole << "Bad syntax; use 'property key=property value'\n";
+                continue;
+            }
+            i = 0;
+            // don't allow commas
+            while (i < line.length())
+            {
+                if (line[i] == ',')
+                    line[i] = ';';
+                ++i;
+            }
+            if (props.length() > 0)
+                props.push_back(',');
+            props += line;
+        }
     }
     comStream << "start|";
     if (modifier.length() > 0)
