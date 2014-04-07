@@ -4,6 +4,16 @@
 using namespace rtypes;
 using namespace minecraft_controller;
 
+// minecraft_controller::minecraft_server_input_property
+
+minecraft_server_input_property::minecraft_server_input_property()
+{
+}
+minecraft_server_input_property::minecraft_server_input_property(const char* pkey,const char* pvalue)
+    : key(pkey), value(pvalue)
+{
+}
+
 // minecraft_controller::minecraft_server_property derivations
 
 bool mcraft_level_type::_readValue(rstream& stream)

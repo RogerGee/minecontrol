@@ -38,8 +38,9 @@ namespace minecraft_controller
         // looks up the property with the specified name and assigns it the specified
         // value; false is returned if either the property didn't exist or if value
         // was incorrect; this operation processes both normal property names (server.properties file)
-        // and extended property names
-        bool set_prop(const rtypes::str& key,const rtypes::str& value);
+        // and extended property names; if 'applyIfDefault' is true, the property will only be applied
+        // if the current property value was not user-supplied
+        bool set_prop(const rtypes::str& key,const rtypes::str& value,bool applyIfDefault = false);
 
         // writes properties in the correct format for the `server.properties'
         // file used by the minecraft server process; only properties that
@@ -56,7 +57,7 @@ namespace minecraft_controller
         };
     private:
         _prop_process_flag _process_ex_prop(const rtypes::str& key,const rtypes::str& value);
-        virtual _prop_process_flag _process_prop(const rtypes::str& key,const rtypes::str& value);
+        virtual _prop_process_flag _process_prop(const rtypes::str& key,const rtypes::str& value,bool applyIfDefault = false);
         virtual void _put_props(rtypes::rstream&) const;
 
         static void _strip(rtypes::str&);
@@ -67,8 +68,38 @@ namespace minecraft_controller
     private:
         minecraft_server_property_list _properties;
 
-        virtual _prop_process_flag _process_prop(const rtypes::str& key,const rtypes::str& value);
+        virtual _prop_process_flag _process_prop(const rtypes::str& key,const rtypes::str& value,bool applyIfDefault);
         virtual void _put_props(rtypes::rstream&) const;
+    };
+
+    class minecraft_server_init_manager
+    {
+    public:
+        minecraft_server_init_manager();
+
+        void read_from_file(); // reload settings from master file
+        void apply_properties(minecraft_server_info&); // apply override and default properties
+
+        char* exec()
+        { return &_exec[0]; }
+        char* arguments()
+        { return &_argumentsBuffer[0]; }
+        rtypes::byte shutdown_countdown() const
+        { return _shutdownCountdown; }
+        rtypes::uint64 server_time() const
+        { return _maxSeconds; }
+        rtypes::uint16 max_servers() const
+        { return _maxServers; }
+    private:
+        mutex _mtx;
+
+        rtypes::str _exec; // path to executable
+        rtypes::str _argumentsBuffer; // arguments to executable separated by null-characters and terminated by a final null-character
+        rtypes::byte _shutdownCountdown; // the number of seconds to wait for the server to shutdown before killing it
+        rtypes::uint64 _maxSeconds; // the number of seconds to allow the server to run before auto-shutdown
+        rtypes::uint16 _maxServers; // the maximum number of servers that minecontrol will allow
+        rtypes::dynamic_array<minecraft_server_input_property> _overrideProperties; // properties that are always applied
+        rtypes::dynamic_array<minecraft_server_input_property> _defaultProperties; // properties that are only applied when the user doesn't specify them
     };
 
     class minecraft_server_manager;
@@ -83,6 +114,7 @@ namespace minecraft_controller
         enum minecraft_server_start_condition
         {
             mcraft_start_success = 0, // the server process was started successfully
+            mcraft_start_server_too_many_servers, // the server process was not allowed to start; too many servers are running on the machine
             mcraft_start_server_filesystem_error, // the server couldn't set up the filesystem for the minecraft server
             mcraft_start_server_permissions_fail, // the server process couldn't set correct permissions for minecraft server process
             mcraft_start_server_does_not_exist, // server identified by specified internalName (directory) was not found
@@ -140,6 +172,9 @@ namespace minecraft_controller
         static void _alarm_handler(int);
         static void* _io_thread(void*);
 
+        // global server settings (read from initialization file)
+        static minecraft_server_init_manager _globals; // global settings
+
         // per server attributes
         rtypes::str _internalName;
         rtypes::uint32 _internalID;
@@ -149,15 +184,9 @@ namespace minecraft_controller
         minecontrol_authority _authority;
         volatile bool _threadCondition;
         minecraft_server_exit_condition _threadExit; // (this just serves as a memory location that outlives _io_thread)
+        rtypes::uint64 _maxTime;
         rtypes::uint64 _elapsed;
         int _uid, _guid;
-
-        // global server attributes (read from initialization file)
-        rtypes::str _program; // path to executable
-        rtypes::str _argumentsBuffer; // arguments to executable separated by null-characters and terminated by a final null-character
-        rtypes::byte _shutdownCountdown; // the number of seconds to wait for the server to shutdown before killing it
-        rtypes::uint64 _maxSeconds; // the number of seconds to allow the server to run before auto-shutdown
-        rtypes::str _defaultPort; // if non-empty, override this port if creating a new server configuration
 
         // helpers
         bool _create_server_properties_file(minecraft_server_info&);

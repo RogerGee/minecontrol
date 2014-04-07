@@ -13,6 +13,35 @@ using namespace minecraft_controller;
 
 /*static*/ mutex controller_client::clientsMutex;
 /*static*/ dynamic_array<void*> controller_client::clients;
+/*static*/ size_type controller_client::CMD_COUNT_WITHOUT_LOGIN = 2;
+/*static*/ size_type controller_client::CMD_COUNT_WITH_LOGIN = 4;
+/*static*/ size_type controller_client::CMD_COUNT_WITH_PRIVALEGED_LOGIN = 1;
+/*static*/ const char* const controller_client::CMDNAME_WITHOUT_LOGIN[] =
+{
+    "login", "status"
+};
+/*static*/ const controller_client::command_call controller_client::CMDFUNC_WITHOUT_LOGIN[] =
+{
+    &controller_client::command_login, &controller_client::command_status
+};
+/*static*/ const char* const controller_client::CMDNAME_WITH_LOGIN[] =
+{
+    "start", "stop",
+    "logout", "console"
+};
+/*static*/ const controller_client::command_call controller_client::CMDFUNC_WITH_LOGIN[] =
+{
+    &controller_client::command_start, &controller_client::command_stop,
+    &controller_client::command_logout, &controller_client::command_console
+};
+/*static*/ const char* const controller_client::CMDNAME_WITH_PRIVALEGED_LOGIN[] =
+{
+    "shutdown"
+};
+/*static*/ const controller_client::command_call controller_client::CMDFUNC_WITH_PRIVALEGED_LOGIN[] =
+{
+    &controller_client::command_shutdown
+};
 /*static*/ controller_client* controller_client::accept_client(domain_socket& ds)
 {
     controller_client* pnew = new controller_client;
@@ -101,29 +130,53 @@ bool controller_client::message_loop()
         lineStream.add_extra_delimiter("|,");
         // process message
         str command;
+        bool executed = false;
         lineStream >> command;
         rutil_to_lower_ref(command);
-        // these commands can be executed without login status
-        if (command == "login")
-            command_login(lineStream);
-        else if (command == "status")
-            command_status(lineStream);
-        // the commands can only be executed with login status
-        else if (uid >= 0) // user is logged in
+        // attempt to process commands that can be executed without login
+        for (size_type i = 0;i<CMD_COUNT_WITHOUT_LOGIN;i++)
         {
-            if (command == "start")
-                command_start(lineStream);
-            else if (command == "stop")
-                command_stop(lineStream);
-            else if (command == "logout")
-                command_logout(lineStream);
-            else if (command == "console")
-                command_console(lineStream);
-            else
-                send_message("error") << "Command '" << command << "' is not understood" << endline;
+            if (command == CMDNAME_WITHOUT_LOGIN[i])
+            {
+                (this->*CMDFUNC_WITHOUT_LOGIN[i])(lineStream);
+                executed = true;
+                break;
+            }
         }
-        else
-            send_message("error") << "Permission denied: please log in" << endline;
+        if (!executed)
+        {
+            // attempt to process commands that can only be executed with login status
+            for (size_type i = 0;i<CMD_COUNT_WITH_LOGIN;i++)
+            {
+                if (command == CMDNAME_WITH_LOGIN[i])
+                {
+                    if (uid < 0)
+                        send_message("error") << "Permission denied: '" << command << "' requires authentication" << endline;
+                    else
+                        (this->*CMDFUNC_WITH_LOGIN[i])(lineStream);
+                    executed = true;
+                    break;
+                }
+            }
+            if (!executed)
+            {
+                // attempt to process commands that can only be executed with privaleged login (root) status
+                for (size_type i = 0;i<CMD_COUNT_WITH_PRIVALEGED_LOGIN;i++)
+                {
+                    if (command == CMDNAME_WITH_PRIVALEGED_LOGIN[i])
+                    {
+                        if (uid == 0)
+                            send_message("error") << "Permission denied: '" << command << "' requires privaleged (root) authentication" << endline;
+                        else
+                            (this->*CMDFUNC_WITH_PRIVALEGED_LOGIN[i])(lineStream);
+                        executed = true;
+                        break;
+                    }
+                }
+                if (!executed)
+                    send_message("error") << "Command '" << command << "' is not understood" << endline;
+            }
+        }
     }
     return false;
 }
@@ -268,7 +321,7 @@ bool controller_client::command_stop(rstream& stream)
     {
         // return regulation of minecraft server(s) to the manager
         minecraft_server_manager::attach_server(&servers[0],servers.size());
-        send_message("error") << "Error: no server was found with id=" << id << "; you may not have permission to modify it" << endline;
+        send_message("error") << "Error: no owned server was found with id=" << id << "; you may not have permission to modify it" << endline;
         return false;
     }
     auto status = servers[i]->pserver->end();
@@ -289,13 +342,13 @@ bool controller_client::command_console(rstream& stream)
     stream >> id;
     if ( !stream.get_input_success() )
     {
-        send_message("error") << "Bad command syntax: usage: 'stop [serverID]'" << endline;
+        send_message("error") << "Bad command syntax: usage: 'console [serverID]'" << endline;
         return false;
     }
     // ask the server manager for handles to running servers that the user can access
     if ((result = minecraft_server_manager::lookup_auth_servers(uid,guid,servers)) == minecraft_server_manager::auth_lookup_none)
     {
-        send_message("error") << "There are no active servers running to stop" << endline;
+        send_message("error") << "There are no active servers running" << endline;
         return false;
     }
     else if (result == minecraft_server_manager::auth_lookup_no_owned)
@@ -311,11 +364,15 @@ bool controller_client::command_console(rstream& stream)
     {
         // return regulation of minecraft server(s) to the manager
         minecraft_server_manager::attach_server(&servers[0],servers.size());
-        send_message("error") << "Error: no server was found with id=" << id << "; you may not have permission to modify it" << endline;
+        send_message("error") << "Error: no owned server was found with id=" << id << "; you may not have permission to modify it" << endline;
         return false;
     }
 
     return true;
+}
+bool controller_client::command_shutdown(rstream&)
+{
+    return false; // unimplemented
 }
 inline
 rstream& controller_client::client_log(rstream& stream)

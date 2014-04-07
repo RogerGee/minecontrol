@@ -5,12 +5,14 @@ template<typename T>
 minecraft_controller::minecraft_server_property<T>::minecraft_server_property()
 {
     _isNull = true;
+    _isDefault = true;
 }
 template<typename T>
 minecraft_controller::minecraft_server_property<T>::minecraft_server_property(const T& defaultValue)
     : _value(defaultValue)
 {
     _isNull = false;
+    _isDefault = true;
 }
 template<typename T>
 minecraft_controller::minecraft_server_property<T>::~minecraft_server_property()
@@ -32,6 +34,9 @@ bool minecraft_controller::minecraft_server_property<T>::set_value(const rtypes:
         // since the user intentionally is setting the value (and it was successful),
         // then it shouldn't be left null
         _isNull = false;
+        // flag the value as being user-supplied; this is important for the server manager
+        // when applying default properties (so that it doesn't override a user's property)
+        _isDefault = false;
         return true;
     }
     return false;

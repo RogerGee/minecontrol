@@ -7,6 +7,17 @@
 
 namespace minecraft_controller
 {
+    // property seen as input; this type is provided
+    // for the implementation to use
+    struct minecraft_server_input_property
+    {
+        minecraft_server_input_property();
+        minecraft_server_input_property(const char* pkey,const char* pvalue);
+
+        rtypes::str key;
+        rtypes::str value;
+    };
+
     // generic property base type
     template<typename T>
     struct minecraft_server_property
@@ -22,11 +33,18 @@ namespace minecraft_controller
         const T& get_value() const
         { return _value; }
 
-        // returns false if the conversion failed
+        // returns false if the conversion failed; this
+        // flags the value as user-set
         bool set_value(const rtypes::str&);
+
+        // returns true if the user explicitly specified a 
+        // value for the property during the session
+        bool is_user_supplied() const
+        { return !_isDefault; }
     protected:
         T _value;
         bool _isNull; // if true, property field becomes: Key=
+        bool _isDefault; // this basically flags whether or not the user supplied a value explicitly for a session
 
         virtual bool _readValue(rtypes::rstream&);
         virtual void _putValue(rtypes::rstream&) const;

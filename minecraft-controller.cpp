@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
+#include <errno.h>
 #include <string.h>
 #include "minecraft-server.h"
 #include "minecontrol-client.h"
@@ -20,7 +21,7 @@ static const char* const DOMAIN_NAME = "minecraft-control";
 
 // globals
 const char* minecraft_controller::PROGRAM_NAME;
-const char* const minecraft_controller::PROGRAM_VERSION = "0.5 (Beta Test)";
+const char* const minecraft_controller::PROGRAM_VERSION = "0.6 (Beta Test)";
 minecraft_controller_log_stream minecraft_controller::standardLog;
 static domain_socket local;
 
@@ -31,41 +32,29 @@ class minecraft_controller_error { };
 static void daemonize(); // turns this process into a daemon
 static void terminate_handler(int); // recieves SIGTERM event
 static bool local_operation(); // sends control to the local server operation
+static void fatal_error(const char* message); // exits the calling process after showing error message on STDERR
 
 int main(int,const char* argv[])
 {
     // perform global setup
     PROGRAM_NAME = argv[0];
-
     // become a daemon
     daemonize();
-
     // log process start
     standardLog << "process started" << endline;
-
     // set up signal handler for TERM and INT events
     if (::signal(SIGTERM,&terminate_handler) == SIG_ERR)
-    {
-        standardLog << "fatal: cannot create signal handler for SIGTERM" << endline;
-        _exit(1);
-    }
+        fatal_error("cannot create signal handler for SIGTERM");
     if (::signal(SIGINT,&terminate_handler) == SIG_ERR)
-    {
-        standardLog << "fatal: cannot create signal handler for SIGINT" << endline;
-        _exit(1);
-    }
-
+        fatal_error("cannot create signal handler for SIGINT");
     // perform startup operations
     minecraft_server_manager::startup_server_manager();
-
     // begin local server operation
     if ( !local_operation() )
         return 1;
-
     // perform shutdown operations
     controller_client::shutdown_clients();
     minecraft_server_manager::shutdown_server_manager();
-
     // log process completion
     standardLog << "process complete" << endline;
     return 0;
@@ -82,12 +71,10 @@ void daemonize()
     }
     if (pid == 0) // child process stays alive
     {
-        // ensure that the process will have no controlling terminal
+        // become the leader of a new session and process group; this 
+        // removes the controlling terminal from the process group
         if (::setsid() == -1)
-        {
-            standardLog << "fatal: cannot become leader of new session" << endline;
-            ::_exit(1);
-        }
+            fatal_error("cannot become leader of new session");
         // reset umask
         ::umask(0);
         // set working directory to root
@@ -100,19 +87,14 @@ void daemonize()
         fdNull = ::open("/dev/null",O_RDWR);
         if (fd == -1)
         {
-            standardLog << "fatal: cannot open log file";
-            _exit(1);
+            if (errno == EACCES)
+                fatal_error("cannot open log file: permission denied: this process must be privileged");
+            fatal_error("cannot open log file");
         }
         if (fdNull == -1)
-        {
-            standardLog << "fatal: cannot open null device" << endline;
-            ::_exit(1);
-        }
+            fatal_error("cannot open null device");
         if (::dup2(fdNull,STDIN_FILENO)!=STDIN_FILENO || ::dup2(fd,STDOUT_FILENO)!=STDOUT_FILENO || ::dup2(fd,STDERR_FILENO)!=STDERR_FILENO)
-        {
-            standardLog << "fatal: cannot replace standard IO" << endline;
-            ::_exit(1);
-        }
+            fatal_error("cannot redirect standard IO to log file");
         ::close(fd);
         ::close(fdNull);
     }
@@ -144,6 +126,12 @@ bool local_operation()
         if (controller_client::accept_client(local) == NULL) // assume 'local' was shutdown
             break;
     return true;
+}
+
+void fatal_error(const char* message)
+{
+    errConsole << PROGRAM_NAME << ": fatal: " << message << endline;
+    _exit(1);
 }
 
 // minecraft_controller::minecraft_controller_log_stream

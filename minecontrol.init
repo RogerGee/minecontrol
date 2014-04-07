@@ -1,3 +1,12 @@
 exec=/usr/bin/java
 cmd-line=-Xmx1024M -Xms1024M -jar /usr/jar/minecraft_server.jar nogui
-override-port=44444
+! Server time is specified in hours
+!server-time=4
+
+! You can specify default properties; these are only applied when
+! the user doesn't explicitly provide them.
+!default-server-port=44444
+
+! You can also specify override properties; these are always applied,
+! even when the user specifies them.
+!override-server-port=44445
