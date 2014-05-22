@@ -186,11 +186,9 @@ void domain_socket_stream_device::_outDevice()
 
 domain_socket_stream::domain_socket_stream()
 {
-    _doesBuffer = true;
 }
 domain_socket_stream::domain_socket_stream(domain_socket& domain)
 {
-    _doesBuffer = true;
     open(domain);
 }
 

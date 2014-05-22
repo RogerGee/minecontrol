@@ -17,34 +17,34 @@ namespace minecraft_controller
         minecraft_server_info();
         virtual ~minecraft_server_info() {}
 
-        // attributes for server startup: these determine the context in which a minecraft
-        // server runs or is created
+        /* attributes for server startup: these determine the context in which a minecraft
+           server runs or is created */
         bool isNew; // request (if possible) that a new server be made with the specified name
         rtypes::str internalName; // corresponds to the directory that contains the Minecraft server files
         const char* homeDirectory; // home directory of user currently logged in
         int uid, guid; // associated user and group id of currently logged-in user
 
-        // extended properties: these properties extend those found in server.properties, often
-        // implementing a feature provide by this network server program; some properties may
-        // override default settings for a 'minecraft_server' read from the minecontrol.init file
-        rtypes::uint64 serverTime; // number of seconds of allowed server run-time
+        /* extended properties: these properties extend those found in server.properties, often
+           implementing a feature provided by this network server program; some properties may
+           override default settings for a 'minecraft_server' read from the minecontrol.init file */
+        rtypes::uint64 serverTime; // number of seconds of allowed server run-time; (uint64)-1 means "not set"
 
-        // attempts to read server properties until end-of-stream; the properties
-        // should be formatted like so: --key=value; any errors are written in a human
-        // readable fashion to 'errorStream'; this operation processes both normal properties
-        // used in the 'server.properties' file and extended properties used by this server program
-        void read_props(rtypes::rstream& inputStream,rtypes::rstream& errorStream);
+        /* attempts to read server properties from specified string buffer; the properties
+           should be formatted like so: key=value\n...; any errors are written in a human
+           readable fashion to 'errorStream'; this operation processes both normal properties
+           used in the 'server.properties' file and extended properties used by minecontrol */
+        void read_props(rtypes::str& propertyList,rtypes::rstream& errorStream);
 
-        // looks up the property with the specified name and assigns it the specified
-        // value; false is returned if either the property didn't exist or if value
-        // was incorrect; this operation processes both normal property names (server.properties file)
-        // and extended property names; if 'applyIfDefault' is true, the property will only be applied
-        // if the current property value was not user-supplied
+        /* looks up the property with the specified name and assigns it the specified
+           value; false is returned if either the property didn't exist or if value
+           was incorrect; this operation processes both normal property names (server.properties file)
+           and extended property names; if 'applyIfDefault' is true, the property will only be applied
+           if the current property value was not user-supplied */
         bool set_prop(const rtypes::str& key,const rtypes::str& value,bool applyIfDefault = false);
 
-        // writes properties in the correct format for the `server.properties'
-        // file used by the minecraft server process; only properties that
-        // exist in the server.properties file are included
+        /* writes properties in the correct format for the 'server.properties'
+           file used by the minecraft server process; only properties that
+           exist in the server.properties file are included */
         void put_props(rtypes::rstream& stream) const
         { _put_props(stream); }
     protected:
@@ -59,8 +59,6 @@ namespace minecraft_controller
         _prop_process_flag _process_ex_prop(const rtypes::str& key,const rtypes::str& value);
         virtual _prop_process_flag _process_prop(const rtypes::str& key,const rtypes::str& value,bool applyIfDefault = false);
         virtual void _put_props(rtypes::rstream&) const;
-
-        static void _strip(rtypes::str&);
     };
 
     struct minecraft_server_info_ex : minecraft_server_info
@@ -86,7 +84,7 @@ namespace minecraft_controller
         { return &_argumentsBuffer[0]; }
         rtypes::byte shutdown_countdown() const
         { return _shutdownCountdown; }
-        rtypes::uint64 server_time() const
+        rtypes::uint64 server_time() const // get time in seconds
         { return _maxSeconds; }
         rtypes::uint16 max_servers() const
         { return _maxServers; }
@@ -114,12 +112,12 @@ namespace minecraft_controller
         enum minecraft_server_start_condition
         {
             mcraft_start_success = 0, // the server process was started successfully
-            mcraft_start_server_too_many_servers, // the server process was not allowed to start; too many servers are running on the machine
+            mcraft_start_server_too_many_servers = 50, // the server process was not allowed to start; too many servers are running on the machine
             mcraft_start_server_filesystem_error, // the server couldn't set up the filesystem for the minecraft server
             mcraft_start_server_permissions_fail, // the server process couldn't set correct permissions for minecraft server process
             mcraft_start_server_does_not_exist, // server identified by specified internalName (directory) was not found
             mcraft_start_server_already_exists, // a new server could not be started because another one already exists
-            mcraft_start_server_process_fail = 100, // the server process (Java) couldn't be executed (should be a larg(er) value)
+            mcraft_start_server_process_fail = 200, // the server process (Java) couldn't be executed (should be a larg(er) value)
             mcraft_start_failure_unknown
         };
 

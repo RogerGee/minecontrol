@@ -16,13 +16,11 @@ using namespace rtypes;
 using namespace minecraft_controller;
 
 // constants
-static const char* const LOG_FILE = "/etc/minecontrol.log";
+static const char* const INIT_DIR = "/etc/minecontrold";
+static const char* const LOG_FILE = "minecontrol.log"; // relative to current working directory of the server process
 static const char* const DOMAIN_NAME = "minecraft-control";
 
 // globals
-const char* minecraft_controller::PROGRAM_NAME;
-const char* const minecraft_controller::PROGRAM_VERSION = "0.6 (Beta Test)";
-minecraft_controller_log_stream minecraft_controller::standardLog;
 static domain_socket local;
 
 // types
@@ -30,23 +28,24 @@ class minecraft_controller_error { };
 
 // functions
 static void daemonize(); // turns this process into a daemon
-static void terminate_handler(int); // recieves SIGTERM event
+static void shutdown_handler(int); // recieves signals from system for server shutdown
+static void sigpipe_handler(int); // recieves signals from system in the event that output fails on a network connection
 static bool local_operation(); // sends control to the local server operation
 static void fatal_error(const char* message); // exits the calling process after showing error message on STDERR
 
-int main(int,const char* argv[])
+int main(int,const char*[])
 {
-    // perform global setup
-    PROGRAM_NAME = argv[0];
     // become a daemon
     daemonize();
     // log process start
-    standardLog << "process started" << endline;
+    minecontrold::standardLog << "process started" << endline;
     // set up signal handler for TERM and INT events
-    if (::signal(SIGTERM,&terminate_handler) == SIG_ERR)
+    if (::signal(SIGTERM,&shutdown_handler) == SIG_ERR)
         fatal_error("cannot create signal handler for SIGTERM");
-    if (::signal(SIGINT,&terminate_handler) == SIG_ERR)
+    if (::signal(SIGINT,&shutdown_handler) == SIG_ERR)
         fatal_error("cannot create signal handler for SIGINT");
+    if (::signal(SIGPIPE,&sigpipe_handler) == SIG_ERR)
+        fatal_error("cannot create signal handler for SIGPIPE");
     // perform startup operations
     minecraft_server_manager::startup_server_manager();
     // begin local server operation
@@ -56,7 +55,7 @@ int main(int,const char* argv[])
     controller_client::shutdown_clients();
     minecraft_server_manager::shutdown_server_manager();
     // log process completion
-    standardLog << "process complete" << endline;
+    minecontrold::standardLog << "process complete" << endline;
     return 0;
 }
 
@@ -66,7 +65,7 @@ void daemonize()
     pid_t pid = ::fork();
     if (pid == -1)
     {
-        standardLog << "fatal: cannot fork a child process" << endline;
+        minecontrold::standardLog << "fatal: cannot fork a child process" << endline;
         ::_exit(1);
     }
     if (pid == 0) // child process stays alive
@@ -77,8 +76,19 @@ void daemonize()
             fatal_error("cannot become leader of new session");
         // reset umask
         ::umask(0);
-        // set working directory to root
-        ::chdir("/");
+        // attempt to create minecontrold init-dir if it does not already exist
+        struct stat stbuf;
+        if (stat(INIT_DIR,&stbuf) == -1)
+        {
+            if (errno != ENOENT)
+                fatal_error("cannot access file information for initial directory");
+            if (mkdir(INIT_DIR,S_IRWXU) == -1)
+                fatal_error("cannot create initial directory");
+        }
+        else if ( !S_ISDIR(stbuf.st_mode) )
+            fatal_error("initial directory exists as something other than a directory");
+        // set working directory to minecontrold init-dir
+        ::chdir(INIT_DIR);
         int fd, fdNull;
         // duplicate:
         //  log file to STDOUT and STDERR
@@ -100,16 +110,21 @@ void daemonize()
     }
     else
     {
-        stdConsole << '[' << pid << "] " << PROGRAM_NAME << " started" << endline;
+        stdConsole << '[' << pid << "] " << minecontrold::get_server_name() << " started" << endline;
         ::_exit(0);
     }
 }
 
-void terminate_handler(int sig)
+void shutdown_handler(int sig)
 {
-    standardLog << "the server is going down; received " << ::strsignal(sig) << " signal" << endline;
+    minecontrold::standardLog << "the server is going down; received " << ::strsignal(sig) << " signal" << endline;
     local.shutdown();
     local.close();
+}
+
+void sigpipe_handler(int)
+{
+    // ignore this signal
 }
 
 bool local_operation()
@@ -117,7 +132,7 @@ bool local_operation()
     // create domain socket for client CLI application communication
     if ( !local.open(DOMAIN_NAME) )
     {
-        standardLog << "fatal: cannot open domain socket for minecraft control" << endline;
+        minecontrold::standardLog << "fatal: cannot open domain socket for minecraft control" << endline;
         return false;
     }
     // accept incoming connections
@@ -130,15 +145,13 @@ bool local_operation()
 
 void fatal_error(const char* message)
 {
-    errConsole << PROGRAM_NAME << ": fatal: " << message << endline;
+    errConsole << minecontrold::get_server_name() << ": fatal: " << message << endline;
     _exit(1);
 }
 
 // minecraft_controller::minecraft_controller_log_stream
 minecraft_controller_log_stream::minecraft_controller_log_stream()
 {
-    // enable automatic buffering
-    _doesBuffer = true;
 }
 void minecraft_controller_log_stream::_outDevice()
 {
@@ -148,9 +161,20 @@ void minecraft_controller_log_stream::_outDevice()
     ::strftime(sbuffer,40,"%a %b %d %H:%M:%S",localtime(&tp));
     // send our local buffer to the standard console
     // add name and process id
-    stdConsole << '[' << sbuffer << "] " << PROGRAM_NAME 
+    stdConsole << '[' << sbuffer << "] " << minecontrold::get_server_name()
                << '[' << ::getpid() << "]: ";
     stdConsole.place(*this);
     stdConsole.flush_output();
     _bufOut.clear();
+}
+
+// minecraft-controller::minecontrold
+/*static*/ minecraft_controller_log_stream minecontrold::standardLog;
+/*static*/ const char* minecontrold::SERVER_NAME = "minecontrold";
+/*static*/ const char* minecontrold::SERVER_VERSION = "0.6 (beta test)";
+void minecontrold::shutdown_minecontrold()
+{
+    minecontrold::standardLog << "the server is going down; an internal request was issued" << endline;
+    local.shutdown();
+    local.close();
 }

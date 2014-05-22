@@ -19,7 +19,7 @@ using namespace minecraft_controller;
 
 // globals
 extern char **environ;
-static const char* const SERVER_INIT_FILE = "/etc/minecontrol.init";
+static const char* const SERVER_INIT_FILE = "minecontrol.init"; // relative to current working directory
 
 // minecraft_controller::minecraft_server_info
 
@@ -32,23 +32,17 @@ minecraft_server_info::minecraft_server_info()
     // set extended options (props)
     // these default values cause them to be
     // ignored by another context
-    serverTime = 0;
+    serverTime = uint64(-1);
 }
-void minecraft_server_info::read_props(rstream& inputStream,rstream& errorStream)
+void minecraft_server_info::read_props(str& propertyList,rstream& errorStream)
 {
-    str key;
-    str value;
-    inputStream.add_extra_delimiter('=');
+    rstringstream inputStream(propertyList);
+    inputStream.delimit_whitespace(false);
+    inputStream.add_extra_delimiter("=\n");
     while ( inputStream.has_input() )
     {
+        str key, value;
         inputStream >> key >> value;
-        // strip leading/trailing whitespace off of strings
-        _strip(key);
-        _strip(value);
-        // make key lower-case so that it can match
-        // the keys of the defined properties; they 
-        // are guaranteed to be lower-case
-        rutil_to_lower_ref(key);
         // check to see if the property belongs to
         // the server.properties file list; if not,
         // attempt the extended properties list
@@ -63,14 +57,13 @@ void minecraft_server_info::read_props(rstream& inputStream,rstream& errorStream
             for (size_type i = 0;i<value.size();i++)
                 if (key[i] == ',')
                     key[i] = ' ';
-            // error messages are destined for the client; use a comma as the separator to adhere to the protocol
+            // error messages are destined for the client; use a newline to delimit
             if (flag == _prop_process_bad_key)
-                errorStream << "Note: the specified option '" << key << "' does not exist or cannot be used and was ignored.,";
+                errorStream << "Note: the specified option '" << key << "' does not exist or cannot be used and was ignored." << newline;
         }
         if (flag == _prop_process_bad_value)
-            errorStream << "Error: the specified option '" << key << "' cannot be assigned the value '" << value << "'.,";
+            errorStream << "Error: the specified option '" << key << "' cannot be assigned the value '" << value << "'." << newline;
     }
-    inputStream.remove_extra_delimiter('=');
 }
 bool minecraft_server_info::set_prop(const str& key,const str& value,bool applyIfDefault)
 {
@@ -82,10 +75,12 @@ bool minecraft_server_info::set_prop(const str& key,const str& value,bool applyI
 minecraft_server_info::_prop_process_flag minecraft_server_info::_process_ex_prop(const str& key,const str& value)
 {
     const_rstringstream ss(value);
-    if (key == "server-time") // uint64: how long the mcraft server stays alive in seconds
+    if (key == "servertime") // uint64: how long the mcraft server stays alive in seconds
     {
-        if (!(ss >> serverTime))
+        if ( !(ss >> serverTime) )
             return _prop_process_bad_value;
+        // assume server time was in hours; compute seconds
+        serverTime *= 3600;
         return _prop_process_success;
     }
     return _prop_process_bad_key;
@@ -99,29 +94,6 @@ minecraft_server_info::_prop_process_flag minecraft_server_info::_process_prop(c
 void minecraft_server_info::_put_props(rstream&) const
 {
     // do nothing
-}
-/*static*/ void minecraft_server_info::_strip(str& item)
-{
-    str tmp;
-    size_type i, j;
-    if (item.length() > 0)
-    {
-        i = 0;
-        while (i<item.length() && item[i]==' ')
-            ++i;
-        j = item.length();
-        while (j>0 && item[j-1]==' ')
-            --j;
-        if (i > 0)
-        {
-            tmp.clear();
-            for (;i<j;i++)
-                tmp.push_back(item[i]);
-            item = tmp;
-        }
-        else
-            item.resize(j);
-    }
 }
 
 // minecraft_controller::minecraft_server_info_ex
@@ -140,7 +112,7 @@ minecraft_server_info::_prop_process_flag minecraft_server_info_ex::_process_pro
     }
     {
         numeric_prop* pprop = _properties.numericProps.lookup(key.c_str());
-        if (pprop!=NULL || (!applyIfDefault || !pprop->is_user_supplied()))
+        if (pprop!=NULL && (!applyIfDefault || !pprop->is_user_supplied()))
         {
             if ( !pprop->set_value(value) )
                 return _prop_process_bad_value;
@@ -149,7 +121,7 @@ minecraft_server_info::_prop_process_flag minecraft_server_info_ex::_process_pro
     }
     {
         string_prop* pprop = _properties.stringProps.lookup(key.c_str());
-        if (pprop!=NULL || (!applyIfDefault || !pprop->is_user_supplied()))
+        if (pprop!=NULL && (!applyIfDefault || !pprop->is_user_supplied()))
         {
             if ( !pprop->set_value(value) )
                 return _prop_process_bad_value;
@@ -220,11 +192,13 @@ void minecraft_server_init_manager::read_from_file()
                 }
                 _argumentsBuffer.push_back(0);
             }
-            else if (key == "server-timer")
+            else if (key == "server-time")
             {
                 ssValue >> _maxSeconds;
                 _maxSeconds *= 3600; // assume value was in hours; make units in seconds
             }
+            else if (key == "max-servers")
+                ssValue >> _maxServers;
             else if (key == "shutdown-countdown")
                 ssValue >> _shutdownCountdown;
             else
@@ -239,7 +213,6 @@ void minecraft_server_init_manager::read_from_file()
                 ss.add_extra_delimiter('-');
                 ss >> head;
                 ss.remove_extra_delimiter('-');
-                standardLog << "test: " << head << endline; //test
                 if (head == "override")
                 {
                     minecraft_server_input_property& prop = ++_overrideProperties;
@@ -258,7 +231,7 @@ void minecraft_server_init_manager::read_from_file()
         }
     }
     else
-        standardLog << "!!warning!!: no init file found or can't open it: using internal defaults" << endline;
+        minecontrold::standardLog << "!!warning!!: no init file found or can't open it: using internal defaults" << endline;
     _mtx.unlock();
 }
 void minecraft_server_init_manager::apply_properties(minecraft_server_info& info)
@@ -329,7 +302,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     if (pid == 0) // child
     {
         // check server limit before proceeding
-        if (_idSet.size()+1 > _globals.max_servers())
+        if (_idSet.size()+1 > size_type(_globals.max_servers()))
             _exit((int)mcraft_start_server_too_many_servers);
         // setup the environment for the minecraft server:
         // change process privilages
@@ -513,21 +486,6 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
     pserver->_threadExit = mcraft_noexit;
     while (pserver->_threadCondition)
     {
-        if (pserver->_elapsed >= pserver->_maxTime)
-        {
-            // time's up! request shutdown from mcraft process
-            serverIO << "say The time has expired. The server will soon shutdown.\nsay Going down in...5" << endline;
-            for (int c = 4;c>=1;--c)
-            {
-                ::sleep(1);
-                serverIO << "say " << c << endline;
-            }
-            ::sleep(1);
-            serverIO << "say 0\nstop" << endline;
-            pserver->_threadExit = mcraft_exit_timeout_request;
-            pserver->_threadCondition = false;
-            break;
-        }
         // check to see if the process is still alive
         int status;
         if (::waitpid(pserver->_processID,&status,WNOHANG) > 0)
@@ -539,19 +497,40 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
             pserver->_threadCondition = false;
             break;
         }
-        // display time messages at regular intervals
-        timeVar = (pserver->_maxTime - pserver->_elapsed);
-        if (timeVar%3600 == 0)
-        {// show hours remaining
-            timeVar /= 3600;
-            serverIO << "say Time status: " << timeVar << " hour" << (timeVar>1 ? "s " : " ")
-                     << "remaining" << endline;
-        }
-        else if ((timeVar<3600 && timeVar%600==0) || (timeVar<600 && timeVar%60==0))
-        {// show minutes remaining on ten-minute intervals (< 1 hour remaining) OR minute intervals (< 10 minutes remaining)
-            timeVar /= 60;
-            serverIO << "say Time status: " << timeVar << " minute" << (timeVar>1 ? "s " : " ")
-                     << "remaining" << endline;
+        // perform elapsed time-dependent operations if this
+        // server is to countdown time for the minecraft server
+        // process; if maxTime is zero then time is unlimited
+        if (pserver->_maxTime != 0)
+        {
+            if (pserver->_elapsed >= pserver->_maxTime)
+            {
+                // time's up! request shutdown from mcraft process
+                serverIO << "say The time has expired. The server will soon shutdown.\nsay Going down in...5" << endline;
+                for (int c = 4;c>=1;--c)
+                {
+                    ::sleep(1);
+                    serverIO << "say " << c << endline;
+                }
+                ::sleep(1);
+                serverIO << "say 0\nstop" << endline;
+                pserver->_threadExit = mcraft_exit_timeout_request;
+                pserver->_threadCondition = false;
+                break;
+            }
+            // display time messages at regular intervals
+            timeVar = (pserver->_maxTime - pserver->_elapsed);
+            if (timeVar%3600 == 0)
+            {// show hours remaining
+                timeVar /= 3600;
+                serverIO << "say Time status: " << timeVar << " hour" << (timeVar>1 ? "s " : " ")
+                         << "remaining" << endline;
+            }
+            else if ((timeVar<3600 && timeVar%600==0) || (timeVar<600 && timeVar%60==0))
+            {// show minutes remaining on ten-minute intervals (< 1 hour remaining) OR minute intervals (< 10 minutes remaining)
+                timeVar /= 60;
+                serverIO << "say Time status: " << timeVar << " minute" << (timeVar>1 ? "s " : " ")
+                         << "remaining" << endline;
+            }
         }
         // sleep thread and update elapsed information
         ::sleep(1);
@@ -588,7 +567,7 @@ bool minecraft_server::_create_server_properties_file(minecraft_server_info& inf
 }
 void minecraft_server::_check_extended_options(const minecraft_server_info& info)
 {
-    if (info.serverTime != 0)
+    if (info.serverTime != uint64(-1))
         _maxTime = info.serverTime;
 }
 
@@ -612,7 +591,7 @@ rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::min
     else if (condition == minecraft_server::mcraft_start_server_process_fail)
         stream << "the child minecraft server process could not be executed";
     else
-        stream << "an unspecified error occurred"; 
+        stream << "an unspecified error occurred";
     return stream;
 }
 rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::minecraft_server_exit_condition condition)
@@ -706,42 +685,38 @@ server_handle::server_handle()
     _mutex.lock();
     for (size_type i = 0;i<_handles.size();i++)
     {
-        if (_handles[i]->pserver != NULL)
+        if (_handles[i]->pserver!=NULL && _handles[i]->pserver->is_running())
         {
-            int hoursLeft, hoursTotal,
-                minutesLeft, minutesTotal,
-                secondsLeft, secondsTotal;
+            uint64 var;
+            uint64 hoursElapsed, hoursTotal,
+                minutesElapsed, minutesTotal,
+                secondsElapsed, secondsTotal;
             passwd* userInfo = ::getpwuid(_handles[i]->pserver->_uid);
-            if ( _handles[i]->pserver->is_running() )
-            {
-                // calculate time running and time total
-                int var = int(_handles[i]->pserver->_maxTime);
-                hoursTotal = var / 3600;
-                var = var % 3600;
-                minutesTotal = var / 60;
-                secondsTotal = var % 60;
-                var = _handles[i]->pserver->_elapsed;
-                hoursLeft = var / 3600;
-                var = var % 3600;
-                minutesLeft = var / 60;
-                secondsLeft = var % 60;
-            }
-            else
-                hoursLeft = -1;
+            // calculate time running and time total
+            var = _handles[i]->pserver->_maxTime;
+            hoursTotal = var / 3600;
+            var %= 3600;
+            minutesTotal = var / 60;
+            secondsTotal = var % 60;
+            var = _handles[i]->pserver->_elapsed;
+            hoursElapsed = var / 3600;
+            var %= 3600;
+            minutesElapsed = var / 60;
+            secondsElapsed = var % 60;
             stream << _handles[i]->pserver->_internalName << ": id=" << _handles[i]->pserver->_internalID
                    << " pid=" << _handles[i]->pserver->_processID 
                    << " user=" << (userInfo==NULL ? "unknown" : userInfo->pw_name)
                    << " time=";
-            if (hoursLeft == -1)
-                stream << "not-running";
+            stream.fill('0');
+            stream << setw(2) << hoursElapsed << ':' << minutesElapsed << ':' << secondsElapsed
+                   << '/';
+            if (_handles[i]->pserver->_maxTime > 0)
+                stream << hoursTotal << ':' << minutesTotal << ':' << secondsTotal;
             else
-            {
-                stream.fill('0');
-                stream << setw(2) << hoursLeft << ':' << minutesLeft << ':' << secondsLeft
-                       << '/' << hoursTotal << ':' << minutesTotal << ':' << secondsTotal << setw(0);
-                stream.fill(' ');
-            }
-            stream << ','; // follow the protocol: use a comma to separate elements
+                stream << "unlimited";
+            stream << setw(0);
+            stream.fill(' ');
+            stream << newline;
             noneFound = false;
         }
     }
@@ -750,8 +725,7 @@ server_handle::server_handle()
     {
     }
     if (noneFound)
-        stream << "No active servers running at this time";
-    stream << endline;
+        stream << "No active servers running at this time\n";
     _mutex.unlock();
 }
 /*static*/ void minecraft_server_manager::startup_server_manager()
@@ -773,7 +747,7 @@ server_handle::server_handle()
         if (_handles[i]->pserver != NULL)
         {
             if ( _handles[i]->pserver->was_started() )
-                standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() << endline;
+                minecontrold::standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() << endline;
             delete _handles[i]->pserver;
             _handles[i]->pserver = NULL;
         }
@@ -798,7 +772,7 @@ server_handle::server_handle()
                 // if the server was already started, call end such that we can record its
                 // exit condition
                 if ( _handles[i]->pserver->was_started() )
-                    standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() << endline;
+                    minecontrold::standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() << endline;
                 delete _handles[i]->pserver;
                 _handles[i]->pserver = NULL;
             }

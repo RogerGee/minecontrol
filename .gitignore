@@ -1,6 +1,7 @@
 test/
 obj/
 dobj/
+minecontrol
+minecontrol-debug
 minecontrold
 minecontrold-debug
-client/minecraft

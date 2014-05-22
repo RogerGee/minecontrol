@@ -2,6 +2,7 @@
 #ifndef MINECONTROL_CLIENT_H
 #define MINECONTROL_CLIENT_H
 #include "rlibrary/rdynarray.h"
+#include "minecontrol-protocol.h"
 #include "domain-socket.h"
 #include "mutex.h" // gets pthread
 
@@ -28,7 +29,7 @@ namespace minecraft_controller
         static void* client_thread(void*);
 
         // command data
-        typedef bool (controller_client::* command_call)(rtypes::rstream&);
+        typedef bool (controller_client::* command_call)(rtypes::rstream&,rtypes::rstream&);
         static rtypes::size_type CMD_COUNT_WITHOUT_LOGIN;
         static rtypes::size_type CMD_COUNT_WITH_LOGIN;
         static rtypes::size_type CMD_COUNT_WITH_PRIVALEGED_LOGIN;
@@ -39,19 +40,25 @@ namespace minecraft_controller
         static char const *const CMDNAME_WITH_PRIVALEGED_LOGIN[]; // root commands
         static command_call const CMDFUNC_WITH_PRIVALEGED_LOGIN[];
 
+        // message handlers
         bool message_loop();
-        bool command_login(rtypes::rstream&);
-        bool command_logout(rtypes::rstream&);
-        bool command_start(rtypes::rstream&);
-        bool command_status(rtypes::rstream&);
-        bool command_stop(rtypes::rstream&);
-        bool command_console(rtypes::rstream&);
-        bool command_shutdown(rtypes::rstream&);
+        bool command_login(rtypes::rstream&,rtypes::rstream&);
+        bool command_logout(rtypes::rstream&,rtypes::rstream&);
+        bool command_start(rtypes::rstream&,rtypes::rstream&);
+        bool command_status(rtypes::rstream&,rtypes::rstream&);
+        bool command_stop(rtypes::rstream&,rtypes::rstream&);
+        bool command_console(rtypes::rstream&,rtypes::rstream&);
+        bool command_shutdown(rtypes::rstream&,rtypes::rstream&);
 
+        // helpers
         inline rtypes::rstream& client_log(rtypes::rstream&);
-        inline rtypes::rstream& send_message(const char* command);
+        inline rtypes::rstream& prepare_message();
+        inline rtypes::rstream& prepare_error();
+        inline rtypes::rstream& prepare_list_message();
+        inline rtypes::rstream& prepare_list_error();
 
         domain_socket_stream connection;
+        minecontrol_message_buffer msgbuf;
         pthread_t threadID;
         volatile bool threadCondition;
         int uid, guid;

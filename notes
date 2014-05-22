@@ -78,5 +78,63 @@ value.
         COMMAND|Field, field, field, ... \n
 
         Each message is terminated by a single newline character. It is recommended
-that each client or server read message into a local buffer until the newline is encountered
+that each client or server read messages into a local buffer until the newline is encountered
 before processing the message
+--------------------------------------------------------------------------------
+Protocol for minecraft-controller: this protocol supercedes the simple one described
+above and is available starting in version 0.6 BETA test.
+
+      Message Format:
+      (request; fields are optional)
+              MINECONTROL-PROTO\n
+              COMMAND\n
+              Field: value\n
+              Field: value\n ...
+              \n
+      (response; fields are optional)
+              MINECONTROL-PROTO\n
+              RESPONSE-COMMAND
+              Field: value\n
+              Field: value\n ...
+              \n
+
+The client initiates a connection to the server sending a request with the HELLO command. The server
+sends a response with the response-command GREETINGS. If this communication fails or times-out, the
+connection will be shutdown by the server. After greetings have been exchanged, any command may be
+sent. The client simply needs to shutdown the socket connection to cleanly disconnect.
+
+      Commands:
+        HELLO
+         Name:
+         Version: 
+        LOGIN
+         Username:
+         Password:
+        LOGOUT
+        START
+         IsNew: true|false
+         ServerName: [dir-name]
+         [optional fields follow]
+         ServerTime: [hours]
+         [minecraft server properties from server.properties]
+         PropertyName: PropertyValue
+        STATUS
+        STOP
+         ServerID: [integer number]
+        CONSOLE
+        SHUTDOWN
+
+      Responses:
+        GREETINGS
+         Name:
+         Version: 
+        MESSAGE
+         Payload: [message]
+        LIST-MESSAGE
+         Item: [message-item]
+         (etc)
+        LIST-ERROR
+         Item: [message-item]
+         (etc)
+        ERROR
+         Payload: [message]

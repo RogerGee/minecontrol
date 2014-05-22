@@ -5,10 +5,7 @@
 
 namespace minecraft_controller
 {
-    extern const char* PROGRAM_NAME;
-    extern const char* const PROGRAM_VERSION;
-
-    extern class minecraft_controller_log_stream : public rtypes::rstream
+    class minecraft_controller_log_stream : public rtypes::rstream
     {
     public:
         minecraft_controller_log_stream();
@@ -16,7 +13,23 @@ namespace minecraft_controller
         virtual bool _inDevice() const
         { return false; } // this stream doesn't do input
         virtual void _outDevice();
-    } standardLog;
+    };
+
+    class minecontrold
+    {
+    public:
+        static const char* get_server_name()
+        { return SERVER_NAME; }
+        static const char* get_server_version()
+        { return SERVER_VERSION; }
+
+        static void shutdown_minecontrold();
+
+        static minecraft_controller_log_stream standardLog;
+    private:
+        static const char* SERVER_NAME;
+        static const char* SERVER_VERSION;
+    };
 }
 
 #endif

@@ -62,7 +62,7 @@ using namespace minecraft_controller;
         else
             clients.push_back(pnew);
         clientsMutex.unlock();
-        pnew->client_log(standardLog) << "accepted client connection" << endline;
+        pnew->client_log(minecontrold::standardLog) << "accepted client connection" << endline;
         return pnew;
     }
     // the accept failed
@@ -94,8 +94,8 @@ controller_client::controller_client()
     // client should be disconnected from this end
     if ( !client->message_loop() )
     {
+        client->client_log(minecontrold::standardLog) << "client connection shutdown by server" << endline;
         clientSock.shutdown();
-        client->client_log(standardLog) << "client connection shutdown by server" << endline;
     }
     // remove client reference from the list of maintained clients
     clientsMutex.lock();
@@ -108,37 +108,45 @@ controller_client::controller_client()
 }
 bool controller_client::message_loop()
 {
+    minecontrol_message inMessage, outMessage;
     domain_socket& sock = connection.get_device();
-    // send the client the name of this server
-    connection << PROGRAM_NAME << '/' << PROGRAM_VERSION << endline;
+    // perform greeting negotiation: the client must send HELLO as it's first message;
+    // anything else (including a malformed message) results in a shutdown
+    connection >> inMessage;
+    if ( !inMessage.is_command("hello") )
+    {
+        client_log(minecontrold::standardLog) << "client didn't say HELLO" << endline;
+        prepare_error() << "Protocol error: expected HELLO command to server" << flush;
+        connection << msgbuf.get_message();
+        return false;
+    }
+    client_log(minecontrold::standardLog) << "client said HELLO" << endline;
+    outMessage.assign_command("GREETINGS");
+    outMessage.add_field("Name",minecontrold::get_server_name());
+    outMessage.add_field("Version",minecontrold::get_server_version());
+    connection << outMessage;
     while (threadCondition)
     {
-        // get message as line of text separated by newline
-        rstringstream lineStream;
-        connection.getline( lineStream.get_device() );
+        // get next message from client
+        connection >> inMessage;
         if (sock.get_last_operation_status() == no_input) // client disconnected
         {
-            client_log(standardLog) << "client disconnect" << endline;
+            client_log(minecontrold::standardLog) << "client disconnect" << endline;
             return true;
         }
         else if (sock.get_last_operation_status() == bad_read) // input error; assume disconnect
         {
-            client_log(standardLog) << "read error: client disconnect" << endline;
+            client_log(minecontrold::standardLog) << "read error: client disconnect" << endline;
             return true;
         }
-        lineStream.delimit_whitespace(false);
-        lineStream.add_extra_delimiter("|,");
         // process message
-        str command;
         bool executed = false;
-        lineStream >> command;
-        rutil_to_lower_ref(command);
         // attempt to process commands that can be executed without login
         for (size_type i = 0;i<CMD_COUNT_WITHOUT_LOGIN;i++)
         {
-            if (command == CMDNAME_WITHOUT_LOGIN[i])
+            if ( inMessage.is_command(CMDNAME_WITHOUT_LOGIN[i]) )
             {
-                (this->*CMDFUNC_WITHOUT_LOGIN[i])(lineStream);
+                (this->*CMDFUNC_WITHOUT_LOGIN[i])(inMessage.get_field_key_stream(),inMessage.get_field_value_stream());
                 executed = true;
                 break;
             }
@@ -148,12 +156,15 @@ bool controller_client::message_loop()
             // attempt to process commands that can only be executed with login status
             for (size_type i = 0;i<CMD_COUNT_WITH_LOGIN;i++)
             {
-                if (command == CMDNAME_WITH_LOGIN[i])
+                if ( inMessage.is_command(CMDNAME_WITH_LOGIN[i]) )
                 {
                     if (uid < 0)
-                        send_message("error") << "Permission denied: '" << command << "' requires authentication" << endline;
+                    {
+                        prepare_error() << "Permission denied: '" << inMessage.get_command() << "' command requires authentication" << flush;
+                        connection << msgbuf.get_message();
+                    }
                     else
-                        (this->*CMDFUNC_WITH_LOGIN[i])(lineStream);
+                        (this->*CMDFUNC_WITH_LOGIN[i])(inMessage.get_field_key_stream(),inMessage.get_field_value_stream());
                     executed = true;
                     break;
                 }
@@ -163,39 +174,61 @@ bool controller_client::message_loop()
                 // attempt to process commands that can only be executed with privaleged login (root) status
                 for (size_type i = 0;i<CMD_COUNT_WITH_PRIVALEGED_LOGIN;i++)
                 {
-                    if (command == CMDNAME_WITH_PRIVALEGED_LOGIN[i])
+                    if ( inMessage.is_command(CMDNAME_WITH_PRIVALEGED_LOGIN[i]) )
                     {
-                        if (uid == 0)
-                            send_message("error") << "Permission denied: '" << command << "' requires privaleged (root) authentication" << endline;
+                        if (uid != 0)
+                        {
+                            prepare_error() << "Permission denied: '" << inMessage.get_command() << "' command requires privaleged (root) authentication" << flush;
+                            connection << msgbuf.get_message();
+                        }
                         else
-                            (this->*CMDFUNC_WITH_PRIVALEGED_LOGIN[i])(lineStream);
+                            (this->*CMDFUNC_WITH_PRIVALEGED_LOGIN[i])(inMessage.get_field_key_stream(),inMessage.get_field_value_stream());
                         executed = true;
                         break;
                     }
                 }
                 if (!executed)
-                    send_message("error") << "Command '" << command << "' is not understood" << endline;
+                {
+                    prepare_error() << "Command '" << inMessage.get_command() << "' is not recognized" << flush;
+                    connection << msgbuf.get_message();
+                }
             }
         }
     }
     return false;
 }
-bool controller_client::command_login(rtypes::rstream& stream) // handles 'login' requests
+bool controller_client::command_login(rstream& kstream,rstream& vstream) // handles 'login' requests
 {
-    // read fields from message stream
+    if (uid != -1)
+    {
+        prepare_error() << "Log in status is already confirmed; please log out to log in again" << flush;
+        connection << msgbuf.get_message();
+        return false;
+    }
+    str key;
     str username, password;
-    stream >> username >> password;
+    // read fields from message stream
+    while (kstream >> key)
+    {
+        if (key == "username")
+            vstream >> username;
+        else if (key == "password")
+            vstream >> password;
+        // ignore anything else
+    }
     // check fields
     if (username.length() == 0)
     {
-        send_message("error") << "Required parameter 'username' missing" << endline;
-        client_log(standardLog) << "authentication failure: client didn't supply username" << endline;
+        prepare_error() << "Required parameter 'username' missing" << flush;
+        connection << msgbuf.get_message();
+        client_log(minecontrold::standardLog) << "authentication failure: client didn't supply username" << endline;
         return false;
     }
     if (password.length() == 0)
     {
-        send_message("error") << "Required parameter 'password' missing" << endline;
-        client_log(standardLog) << "authentication failure: client didn't supply password" << endline;
+        prepare_error() << "Required parameter 'password' missing" << flush;
+        connection << msgbuf.get_message();
+        client_log(minecontrold::standardLog) << "authentication failure: client didn't supply password" << endline;
         return false;
     }
     // obtain user information
@@ -205,15 +238,17 @@ bool controller_client::command_login(rtypes::rstream& stream) // handles 'login
     pwd = getpwnam( username.c_str() );
     if (pwd == NULL)
     {
-        send_message("error") << "Authentication failure: bad username" << endline;
-        client_log(standardLog) << "authentication failure: bad username '" << username << '\'' << endline;
+        prepare_error() << "Authentication failure: bad username" << flush;
+        connection << msgbuf.get_message();
+        client_log(minecontrold::standardLog) << "authentication failure: bad username '" << username << '\'' << endline;
         return false;
     }
     shadowPwd = getspnam( username.c_str() );
     if (shadowPwd==NULL && errno==EACCES)
     {
-        send_message("error") << "Server error: the server cannot log you in" << endline;
-        standardLog << "!!warning!!: server doesn't have permission to authenticate user; is this process priviledged?" << endline;
+        prepare_error() << "This server cannot log you in because it is not priviledged; this is most likely a mistake; contact your SA" << flush;
+        connection << msgbuf.get_message();
+        minecontrold::standardLog << "!!warning!!: server doesn't have permission to authenticate user; is this process priviledged?" << endline;
         return false;
     }
     pwd->pw_passwd = shadowPwd->sp_pwdp;
@@ -221,52 +256,62 @@ bool controller_client::command_login(rtypes::rstream& stream) // handles 'login
         throw controller_client_error();
     if ( !rutil_strcmp(pencrypt,pwd->pw_passwd) )
     {
-        send_message("error") << "Authentication failure: bad password for user '" << username << '\'' << endline;
-        client_log(standardLog) << "authentication failure: bad password for user '" << username << '\'' << endline;
+        prepare_error() << "Authentication failure: bad password for user '" << username << '\'' << flush;
+        connection << msgbuf.get_message();
+        client_log(minecontrold::standardLog) << "authentication failure: bad password for user '" << username << '\'' << endline;
         return false;
     }
     uid = pwd->pw_uid;
     guid = pwd->pw_gid;
     homedir = pwd->pw_dir;
-    send_message("message") << "Authentication complete: logged in as '" << username << '\'' << endline;
-    client_log(standardLog) << "client authenticated successfully as '" << username << '\'' << endline;
+    prepare_message() << "Authentication complete: logged in as '" << username << '\'' << flush;
+    connection << msgbuf.get_message();
+    client_log(minecontrold::standardLog) << "client authenticated successfully as '" << username << '\'' << endline;
     return true;
 }
-bool controller_client::command_logout(rstream&)
+bool controller_client::command_logout(rstream&,rstream&)
 {
     uid = -1;
     guid = -1;
     homedir.clear();
-    send_message("message") << "Successful logout" << endline;
+    prepare_message() << "Successful logout" << flush;
+    connection << msgbuf.get_message();
+    client_log(minecontrold::standardLog) << "client was logged-out of authentication mode" << endline;
     return true;
 }
-bool controller_client::command_start(rstream& stream)
+bool controller_client::command_start(rstream& kstream,rstream& vstream)
 {
-    str s;
+    str key;
+    bool isNew = false; str serverName; str props;
     rstringstream errors;
     minecraft_server_info* pinfo;
-    // attempt to read arguments
-    stream >> s;
-    if (rutil_to_lower(s) == "create")
+    // attempt to read field list from message
+    while (kstream >> key)
     {
-        pinfo = new minecraft_server_info_ex;
-        stream >> pinfo->internalName;
-        pinfo->isNew = true;
-
+        if (key == "isnew")
+            vstream >> isNew;
+        else if (key == "servername")
+            vstream >> serverName;
+        else
+        {
+            // add assumed property of format: name=value\n
+            props += key;
+            vstream >> key;
+            props.push_back('=');
+            props += key;
+            props.push_back('\n');
+        }
     }
-    else
+    if (serverName.length() == 0)
     {
-        pinfo = new minecraft_server_info;
-        pinfo->internalName = s;
-        pinfo->isNew = false;
-    }
-    pinfo->read_props(stream,errors); // read and parse options
-    if (pinfo->internalName.length() == 0)
-    {
-        send_message("error") << "Bad command syntax: usage: 'start [create] server-name [option key=option value,option key=option value[,...]]'" << endline;
-        delete pinfo;
+        prepare_error() << "No server name specified" << flush;
+        connection << msgbuf.get_message();
         return false;
     }
+    pinfo = isNew ? new minecraft_server_info_ex : new minecraft_server_info;
+    pinfo->internalName = serverName;
+    pinfo->isNew = isNew;
+    pinfo->read_props(props,errors); // read and parse options
     pinfo->uid = uid;
     pinfo->guid = guid;
     pinfo->homeDirectory = homedir.c_str();
@@ -275,42 +320,52 @@ bool controller_client::command_start(rstream& stream)
     handle = minecraft_server_manager::allocate_server();
     handle->set_clientid( connection.get_device().get_accept_id() );
     auto cond = handle->pserver->begin(*pinfo);
-    client_log(standardLog) << cond << endline;
+    client_log(minecontrold::standardLog) << cond << endline;
     if ( errors.has_input() )
-        send_message("list") << cond << ',' << errors.get_device() << endline;
+        (cond==minecraft_server::mcraft_start_success ? prepare_list_message() : prepare_list_error()) << cond << newline << errors << flush;
     else
-        send_message("message") << cond << endline;
-
+        (cond==minecraft_server::mcraft_start_success ? prepare_message() : prepare_error()) << cond << flush;
+    connection << msgbuf.get_message();
     minecraft_server_manager::attach_server(handle);
     delete pinfo;
     return true;
 }
-bool controller_client::command_status(rstream&)
+bool controller_client::command_status(rstream&,rstream&)
 {
-    minecraft_server_manager::print_servers(send_message("list"),uid,guid);
+    rstringstream ss;
+    rstream& msg = prepare_list_message();
+    minecraft_server_manager::print_servers(msg,uid,guid);
+    msg.flush_output();
+    connection << msgbuf.get_message();
     return true;
 }
-bool controller_client::command_stop(rstream& stream)
+bool controller_client::command_stop(rstream& kstream,rstream& vstream)
 {
-    uint32 id;
+    str key;
+    uint32 id = -1;
     dynamic_array<server_handle*> servers;
     minecraft_server_manager::auth_lookup_result result;
-    // read off id
-    stream >> id;
-    if ( !stream.get_input_success() )
+    // read off needed property
+    while (kstream >> key)
+        if (key == "serverid")
+            vstream >> id;
+    if (id == uint32(-1))
     {
-        send_message("error") << "Bad command syntax: usage: 'stop [serverID]'" << endline;
+        prepare_message() << "No running server id specified" << flush;
+        connection << msgbuf.get_message();
         return false;
     }
-    // ask the server manager for handles to running servers that the user can access
+    // ask the server manager for handles to running servers that the user can access; we need to make sure no blocking calls happen here (shouldn't be a problem)
     if ((result = minecraft_server_manager::lookup_auth_servers(uid,guid,servers)) == minecraft_server_manager::auth_lookup_none)
     {
-        send_message("error") << "There are no active servers running to stop" << endline;
+        prepare_message() << "There are no active servers running to stop" << flush;
+        connection << msgbuf.get_message();
         return false;
     }
     else if (result == minecraft_server_manager::auth_lookup_no_owned)
     {
-        send_message("error") << "You don't have permission to access any of the running servers" << endline;
+        prepare_error() << "User does not have permission to access any of the running servers" << flush;
+        connection << msgbuf.get_message();
         return false;
     }
     // search through accessible servers; find the one with the specified id
@@ -321,39 +376,47 @@ bool controller_client::command_stop(rstream& stream)
     {
         // return regulation of minecraft server(s) to the manager
         minecraft_server_manager::attach_server(&servers[0],servers.size());
-        send_message("error") << "Error: no owned server was found with id=" << id << "; you may not have permission to modify it" << endline;
+        prepare_error() << "No owned server was found with id=" << id << "; user may not have permission to modify it" << flush;
+        connection << msgbuf.get_message();
         return false;
     }
     auto status = servers[i]->pserver->end();
-    send_message("message") << status << endline;
+    prepare_message() << status << flush;
+    connection << msgbuf.get_message();
     // use the original id in log message to map closing server
     // to the client session that started it
-    standardLog << '{' << servers[i]->get_clientid() << "} " << status << endline;
+    minecontrold::standardLog << '{' << servers[i]->get_clientid() << "} " << status << endline;
     // return regulation of minecraft server(s) to the manager
     minecraft_server_manager::attach_server(&servers[0],servers.size());
     return true;
 }
-bool controller_client::command_console(rstream& stream)
+bool controller_client::command_console(rstream& kstream,rstream& vstream)
 {
-    uint32 id;
+    str key;
+    uint32 id = -1;
     dynamic_array<server_handle*> servers;
     minecraft_server_manager::auth_lookup_result result;
-    // read off id
-    stream >> id;
-    if ( !stream.get_input_success() )
+    // read off needed property
+    while (kstream >> key)
+        if (key == "serverid")
+            vstream >> id;
+    if (id == uint32(-1))
     {
-        send_message("error") << "Bad command syntax: usage: 'console [serverID]'" << endline;
+        prepare_message() << "No running server id specified" << flush;
+        connection << msgbuf.get_message();
         return false;
     }
-    // ask the server manager for handles to running servers that the user can access
+    // ask the server manager for handles to running servers that the user can access; we need to make sure no blocking calls happen here (shouldn't be a problem)
     if ((result = minecraft_server_manager::lookup_auth_servers(uid,guid,servers)) == minecraft_server_manager::auth_lookup_none)
     {
-        send_message("error") << "There are no active servers running" << endline;
+        prepare_message() << "There are no active servers running to stop" << flush;
+        connection << msgbuf.get_message();
         return false;
     }
     else if (result == minecraft_server_manager::auth_lookup_no_owned)
     {
-        send_message("error") << "You don't have permission to access any of the running servers" << endline;
+        prepare_error() << "User does not have permission to access any of the running servers" << flush;
+        connection << msgbuf.get_message();
         return false;
     }
     // search through accessible servers; find the one with the specified id
@@ -364,15 +427,19 @@ bool controller_client::command_console(rstream& stream)
     {
         // return regulation of minecraft server(s) to the manager
         minecraft_server_manager::attach_server(&servers[0],servers.size());
-        send_message("error") << "Error: no owned server was found with id=" << id << "; you may not have permission to modify it" << endline;
+        prepare_error() << "No owned server was found with id=" << id << "; user may not have permission to modify it" << flush;
+        connection << msgbuf.get_message();
         return false;
     }
 
     return true;
 }
-bool controller_client::command_shutdown(rstream&)
+bool controller_client::command_shutdown(rstream&,rstream&)
 {
-    return false; // unimplemented
+    prepare_message() << "Server '" << minecontrold::get_server_name() << "' is shutting down" << flush;
+    connection << msgbuf.get_message();
+    minecontrold::shutdown_minecontrold();
+    return true;
 }
 inline
 rstream& controller_client::client_log(rstream& stream)
@@ -380,7 +447,30 @@ rstream& controller_client::client_log(rstream& stream)
     return stream << '{' << connection.get_device().get_accept_id() << "} ";
 }
 inline
-rstream& controller_client::send_message(const char* command)
+rstream& controller_client::prepare_message()
 {
-    return connection << command << '|';
+    msgbuf.begin("MESSAGE");
+    msgbuf.enqueue_field_name("Payload");
+    return msgbuf;
+}
+inline
+rstream& controller_client::prepare_error()
+{
+    msgbuf.begin("ERROR");
+    msgbuf.enqueue_field_name("Payload");
+    return msgbuf;
+}
+inline
+rstream& controller_client::prepare_list_message()
+{
+    msgbuf.begin("LIST-MESSAGE");
+    msgbuf.repeat_field("Item");
+    return msgbuf;
+}
+inline
+rstream& controller_client::prepare_list_error()
+{
+    msgbuf.begin("LIST-ERROR");
+    msgbuf.repeat_field("Item");
+    return msgbuf;
 }

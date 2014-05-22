@@ -1,7 +1,11 @@
 exec=/usr/bin/java
 cmd-line=-Xmx1024M -Xms1024M -jar /usr/jar/minecraft_server.jar nogui
+
 ! Server time is specified in hours
 !server-time=4
+
+! Max servers restricts number of running minecraft server processes
+!max-servers=1
 
 ! You can specify default properties; these are only applied when
 ! the user doesn't explicitly provide them.

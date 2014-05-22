@@ -101,11 +101,9 @@ void pipe::_closeEvent(io_access_flag access)
 
 pipe_stream::pipe_stream()
 {
-    _doesBuffer = true;
 }
 pipe_stream::pipe_stream(pipe& device)
 {
-    _doesBuffer = true;
     open(device);
 }
 pipe_stream::~pipe_stream()
