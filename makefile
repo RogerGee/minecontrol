@@ -105,4 +105,3 @@ install:
 uninstall:
 	if [ -f /usr/local/bin/$(PROGRAM_NAME_SERVER) ]; then rm --verbose /usr/local/bin/$(PROGRAM_NAME_SERVER); fi;
 	if [ -f /usr/local/bin/$(PROGRAM_NAME_CLIENT) ]; then rm --verbose /usr/local/bin/$(PROGRAM_NAME_CLIENT); fi;
-	make -C client uninstall

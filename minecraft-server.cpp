@@ -181,10 +181,10 @@ void minecraft_server_init_manager::read_from_file()
             if (key.length()==0 || key[0]=='!') // comment or blank line
                 continue;
             if (key == "exec")
-                _exec = ssValue.get_device();
+	        ssValue.getline(_exec);
             else if (key == "cmd-line")
             {
-                _argumentsBuffer.clear();
+	        _argumentsBuffer.clear();
                 while (ssValue >> key)
                 {
                     _argumentsBuffer += key;
