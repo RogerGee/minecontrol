@@ -252,7 +252,7 @@ void minecraft_server_init_manager::apply_properties(minecraft_server_info& info
 minecraft_server::minecraft_server()
 {
     // set up shared handler and real timer if not already set up
-    if (_handlerRef <= 0)
+    if (++_handlerRef == 1)
     {
         if (::signal(SIGALRM,&_alarm_handler) == SIG_ERR)
             throw minecraft_server_error();
@@ -263,7 +263,6 @@ minecraft_server::minecraft_server()
         tval.it_value.tv_usec = 0;
         if (::setitimer(ITIMER_REAL,&tval,NULL) == -1)
             throw minecraft_server_error();
-        ++_handlerRef;
     }
     // initialize per process attributes
     _internalID = 0;
