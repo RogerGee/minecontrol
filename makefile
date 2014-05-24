@@ -102,13 +102,13 @@ clean:
 	if [ -f $(PACKAGE_NAME) ]; then rm --verbose $(PACKAGE_NAME); fi;
 
 install:
-	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) /usr/local/bin; fi;
+	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) /usr/local/bin; chmod go-rwx /usr/bin/$(PROGRAM_NAME_SERVER); fi;
 	if [ -f $(PROGRAM_NAME_CLIENT) ]; then cp $(PROGRAM_NAME_CLIENT) /usr/local/bin; fi;
 
 package: $(PACKAGE_NAME)
 
 $(PACKAGE_NAME):
-	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) minecontrol-deb/usr/bin; fi;
+	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) minecontrol-deb/usr/bin; chmod go-rwx minecontrol-deb/usr/bin/$(PROGRAM_NAME_SERVER); fi;
 	if [ -f $(PROGRAM_NAME_CLIENT) ]; then cp $(PROGRAM_NAME_CLIENT) minecontrol-deb/usr/bin; fi;
 	dpkg-deb --build minecontrol-deb/ $(PACKAGE_NAME)
 
