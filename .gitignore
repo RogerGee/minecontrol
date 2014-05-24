@@ -5,3 +5,5 @@ minecontrol
 minecontrol-debug
 minecontrold
 minecontrold-debug
+minecontrol.deb
+minecontrol-deb/usr/

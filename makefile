@@ -8,6 +8,7 @@ PROGRAM_NAME_SERVER = minecontrold
 PROGRAM_NAME_SERVER_DEBUG = minecontrold-debug
 PROGRAM_NAME_CLIENT = minecontrol
 PROGRAM_NAME_CLIENT_DEBUG = minecontrol-debug
+PACKAGE_NAME = minecontrol.deb
 OBJECT_DIRECTORY_NAME = obj/
 OBJECT_DIRECTORY_NAME_DEBUG = dobj/
 LINK = g++
@@ -53,6 +54,7 @@ debug: $(OBJECT_DIRECTORY) $(PROGRAM_SERVER) $(PROGRAM_CLIENT)
 
 $(PROGRAM_SERVER): $(OBJECTS_SERVER)
 	$(LINK) $(OUT)$(PROGRAM_SERVER) $(OBJECTS_SERVER) $(LIBRARY_SERVER)
+	chmod go-rwx $(PROGRAM_SERVER)
 
 $(PROGRAM_CLIENT): $(OBJECTS_CLIENT)
 	$(LINK) $(OUT)$(PROGRAM_CLIENT) $(OBJECTS_CLIENT) $(LIBRARY_CLIENT)
@@ -97,10 +99,18 @@ clean:
 	if [ -f $(PROGRAM_NAME_SERVER_DEBUG) ]; then rm --verbose $(PROGRAM_NAME_SERVER_DEBUG); fi;
 	if [ -f $(PROGRAM_NAME_CLIENT) ]; then rm --verbose $(PROGRAM_NAME_CLIENT); fi;
 	if [ -f $(PROGRAM_NAME_CLIENT_DEBUG) ]; then rm --verbose $(PROGRAM_NAME_CLIENT_DEBUG); fi;
+	if [ -f $(PACKAGE_NAME) ]; then rm --verbose $(PACKAGE_NAME); fi;
 
 install:
-	if [ -f $(PROGRAM_NAME_SERVER) ]; then mv $(PROGRAM_NAME_SERVER) /usr/local/bin; chmod go-rwx /usr/local/bin/$(PROGRAM_NAME_SERVER); fi;
-	if [ -f $(PROGRAM_NAME_CLIENT) ]; then mv $(PROGRAM_NAME_CLIENT) /usr/local/bin; fi;
+	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) /usr/local/bin; fi;
+	if [ -f $(PROGRAM_NAME_CLIENT) ]; then cp $(PROGRAM_NAME_CLIENT) /usr/local/bin; fi;
+
+package: $(PACKAGE_NAME)
+
+$(PACKAGE_NAME):
+	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) minecontrol-deb/usr/bin; fi;
+	if [ -f $(PROGRAM_NAME_CLIENT) ]; then cp $(PROGRAM_NAME_CLIENT) minecontrol-deb/usr/bin; fi;
+	dpkg-deb --build minecontrol-deb/ $(PACKAGE_NAME)
 
 uninstall:
 	if [ -f /usr/local/bin/$(PROGRAM_NAME_SERVER) ]; then rm --verbose /usr/local/bin/$(PROGRAM_NAME_SERVER); fi;

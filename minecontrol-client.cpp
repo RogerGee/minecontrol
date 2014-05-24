@@ -77,6 +77,14 @@ using namespace minecraft_controller;
             reinterpret_cast<controller_client*>(clients[i])->threadCondition = false;
     clientsMutex.unlock();
 }
+/*static*/ void controller_client::close_client_sockets()
+{
+    // I assume that this is called from a single-threaded forked context
+    // thus I don't attempt to aquire the clientsMutex lock
+    for (size_type i = 0;i<clients.size();++i)
+	if (clients[i] != NULL)
+	    reinterpret_cast<controller_client*>(clients[i])->connection.get_device().close();
+}
 controller_client::controller_client()
 {
     threadID = -1;

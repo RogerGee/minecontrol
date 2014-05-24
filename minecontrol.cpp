@@ -12,7 +12,7 @@ using namespace rtypes;
 using namespace minecraft_controller;
 
 // constants
-static const char* const DOMAIN_NAME = "minecraft-control";
+static const char* const DOMAIN_NAME = "minecontrol";
 static const char* PROGRAM_NAME;
 static const char* const PROGRAM_VERSION = "0.6 (BETA)";
 

@@ -21,6 +21,7 @@ namespace minecraft_controller
         static controller_client* accept_client(domain_socket&);
 
         static void shutdown_clients();
+	static void close_client_sockets();
     private:
         controller_client();
 

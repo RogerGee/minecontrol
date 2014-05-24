@@ -18,7 +18,7 @@ using namespace minecraft_controller;
 // constants
 static const char* const INIT_DIR = "/etc/minecontrold";
 static const char* const LOG_FILE = "minecontrol.log"; // relative to current working directory of the server process
-static const char* const DOMAIN_NAME = "minecraft-control";
+static const char* const DOMAIN_NAME = "minecontrol";
 
 // globals
 static domain_socket local;
@@ -182,4 +182,6 @@ void minecontrold::close_global_fds()
 {
     // close the domain socket @minecontrol
     local.close();
+    // close domain socket connections
+    controller_client::close_client_sockets();
 }

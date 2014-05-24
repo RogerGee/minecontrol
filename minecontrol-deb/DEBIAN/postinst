@@ -1,0 +1,4 @@
+#!/bin/sh
+# postinst - post install script for minecontrold package
+
+update-rc.d -f minecontrold defaults
