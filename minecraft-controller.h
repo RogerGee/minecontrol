@@ -23,7 +23,8 @@ namespace minecraft_controller
         static const char* get_server_version()
         { return SERVER_VERSION; }
 
-        static void shutdown_minecontrold();
+        static void shutdown_minecontrold(); // shutdown the minecontrold server; this should terminate the process
+        static void close_global_fds(); // close all global file descriptors in use by the process (except standard descriptors)
 
         static minecraft_controller_log_stream standardLog;
     private:

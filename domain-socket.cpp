@@ -38,7 +38,7 @@ domain_socket::domain_socket_accept_condition domain_socket::accept(domain_socke
             dsnew._id = _idTop++;
             return domain_socket_accepted;
         }
-        else if (errno==EINTR || errno==ECONNABORTED || errno==EBADF)
+        else if (errno==EINTR || errno==ECONNABORTED || errno==EBADF || errno==EINVAL)
             return domain_socket_interrupted;
         else
             throw domain_socket_error();

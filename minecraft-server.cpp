@@ -345,6 +345,11 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         args[top++] = NULL;
         // duplicate pipe as standard IO
         _iochannel.standard_duplicate();
+        // close all file descriptors not needed by the
+        // child process; note that this is safe since
+	// the fork closed any other threads running
+	// servers off these file descriptors
+        minecontrold::close_global_fds();        
         // execute program
         if (::execve(_globals.exec(),args,environ) == -1)
             _exit((int)mcraft_start_server_process_fail);

@@ -178,3 +178,8 @@ void minecontrold::shutdown_minecontrold()
     local.shutdown();
     local.close();
 }
+void minecontrold::close_global_fds()
+{
+    // close the domain socket @minecontrol
+    local.close();
+}

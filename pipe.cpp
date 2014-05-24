@@ -48,10 +48,10 @@ void pipe::close_open()
         ::close(_fdOpenWrite);
         _fdOpenWrite = -1;
     }
-    if (_fdOpenWrite != -1)
+    if (_fdOpenRead != -1)
     {
-        ::close(_fdOpenWrite);
-        _fdOpenWrite = -1;
+        ::close(_fdOpenRead);
+        _fdOpenRead = -1;
     }
 }
 void pipe::_openEvent(const char*,io_access_flag access,io_resource** pinput,io_resource** poutput,void**,uint32)
