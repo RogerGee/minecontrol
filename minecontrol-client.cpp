@@ -42,11 +42,14 @@ using namespace minecraft_controller;
 {
     &controller_client::command_shutdown
 };
-/*static*/ controller_client* controller_client::accept_client(domain_socket& ds)
+/*static*/ controller_client* controller_client::accept_client(socket& ds)
 {
-    controller_client* pnew = new controller_client;
-    if (ds.accept(pnew->connection.get_device()) == domain_socket::domain_socket_accepted)
+    socket* pclientsock;
+    // accept a client; stores a dynamically allocated socket object in pnew->sock; this will
+    // be passed to the controller_client object which will later free it
+    if (ds.accept(pclientsock) == socket_accepted)
     {
+        controller_client* pnew = new controller_client(pclientsock);
         // send the client to a new thread for processing
         if (::pthread_create(&pnew->threadID,NULL,&controller_client::client_thread,pnew) != 0)
             throw controller_client_error();
@@ -62,19 +65,33 @@ using namespace minecraft_controller;
         else
             clients.push_back(pnew);
         clientsMutex.unlock();
-        pnew->client_log(minecontrold::standardLog) << "accepted client connection" << endline;
+        if (pclientsock->get_family() == socket_family_unix)
+            pnew->client_log(minecontrold::standardLog) << "accepted local client connection" << endline;
+        else if (pclientsock->get_family() == socket_family_inet)
+            pnew->client_log(minecontrold::standardLog) << "accepted remote client connection" << endline;
+        else
+            throw controller_client_error();
         return pnew;
     }
     // the accept failed
-    delete pnew;
     return NULL;
 }
 /*static*/ void controller_client::shutdown_clients()
 {
     clientsMutex.lock();
     for (size_type i = 0;i<clients.size();i++)
-        if (clients[i] != NULL)
-            reinterpret_cast<controller_client*>(clients[i])->threadCondition = false;
+    {
+        controller_client* cl = reinterpret_cast<controller_client*>(clients[i]);
+        if (cl!=NULL && cl->sock!=NULL)
+        {
+            if (cl->sock != NULL)
+            {
+                cl->sock->shutdown();
+                cl->sock->close();
+            }
+            cl->threadCondition = false;
+        }
+    }
     clientsMutex.unlock();
 }
 /*static*/ void controller_client::close_client_sockets()
@@ -83,41 +100,51 @@ using namespace minecraft_controller;
     // thus I don't attempt to aquire the clientsMutex lock
     for (size_type i = 0;i<clients.size();++i)
 	if (clients[i] != NULL)
-	    reinterpret_cast<controller_client*>(clients[i])->connection.get_device().close();
+	    reinterpret_cast<controller_client*>(clients[i])->sock->close();
 }
-controller_client::controller_client()
+controller_client::controller_client(socket* acceptedSocket)
 {
+    if (acceptedSocket == NULL)
+        throw controller_client_error();
+    sock = acceptedSocket;
     threadID = -1;
     threadCondition = true;
     uid = -1; // means "not logged in"
     guid = -1;
     referenceIndex = 0;
 }
+controller_client::~controller_client()
+{
+    // this object's socket was dynamically allocated
+    // in another context
+    if (sock != NULL)
+        delete sock;
+}
 /*static*/ void* controller_client::client_thread(void* pclient)
 {
     controller_client* client = reinterpret_cast<controller_client*>(pclient);
-    domain_socket& clientSock = client->connection.get_device();
     // enter into communication with the client;
     // if message_loop() returns false, then the
     // client should be disconnected from this end
+    client->connection.assign(*client->sock);
     if ( !client->message_loop() )
     {
         client->client_log(minecontrold::standardLog) << "client connection shutdown by server" << endline;
-        clientSock.shutdown();
+        client->sock->shutdown();
     }
     // remove client reference from the list of maintained clients
     clientsMutex.lock();
     clients[client->referenceIndex] = NULL;
     clientsMutex.unlock();
-    // this thread is responsible for the 
-    // memory that the client occupies
+    // this thread is responsible for the dynamically allocated
+    // memory used to create the controller client object
     delete client;
     return NULL;
 }
 bool controller_client::message_loop()
 {
+    io_device& device = connection.get_device(); // should be a reference to this->sock
     minecontrol_message inMessage, outMessage;
-    domain_socket& sock = connection.get_device();
     // perform greeting negotiation: the client must send HELLO as it's first message;
     // anything else (including a malformed message) results in a shutdown
     connection >> inMessage;
@@ -137,13 +164,17 @@ bool controller_client::message_loop()
     {
         // get next message from client
         connection >> inMessage;
-        if (sock.get_last_operation_status() == no_input) // client disconnected
+        if (device.get_last_operation_status() == no_input) // client disconnected
         {
+            if ( !device.is_valid_context() )
+                return false;
             client_log(minecontrold::standardLog) << "client disconnect" << endline;
             return true;
         }
-        else if (sock.get_last_operation_status() == bad_read) // input error; assume disconnect
+        else if (device.get_last_operation_status() == bad_read) // input error; assume disconnect
         {
+            if ( !device.is_valid_context() )
+                return false;
             client_log(minecontrold::standardLog) << "read error: client disconnect" << endline;
             return true;
         }
@@ -291,7 +322,7 @@ bool controller_client::command_start(rstream& kstream,rstream& vstream)
 {
     str key;
     bool isNew = false; str serverName; str props;
-    rstringstream errors;
+    stringstream errors;
     minecraft_server_info* pinfo;
     // attempt to read field list from message
     while (kstream >> key)
@@ -326,7 +357,7 @@ bool controller_client::command_start(rstream& kstream,rstream& vstream)
     // attempt to start the minecraft server
     server_handle* handle;
     handle = minecraft_server_manager::allocate_server();
-    handle->set_clientid( connection.get_device().get_accept_id() );
+    handle->set_clientid( sock->get_accept_id() );
     auto cond = handle->pserver->begin(*pinfo);
     client_log(minecontrold::standardLog) << cond << endline;
     if ( errors.has_input() )
@@ -340,7 +371,7 @@ bool controller_client::command_start(rstream& kstream,rstream& vstream)
 }
 bool controller_client::command_status(rstream&,rstream&)
 {
-    rstringstream ss;
+    stringstream ss;
     rstream& msg = prepare_list_message();
     minecraft_server_manager::print_servers(msg,uid,guid);
     msg.flush_output();
@@ -452,7 +483,7 @@ bool controller_client::command_shutdown(rstream&,rstream&)
 inline
 rstream& controller_client::client_log(rstream& stream)
 {
-    return stream << '{' << connection.get_device().get_accept_id() << "} ";
+    return stream << '{' << sock->get_accept_id() << "} ";
 }
 inline
 rstream& controller_client::prepare_message()

@@ -62,7 +62,7 @@ rstream& minecraft_controller::operator >>(rstream& stream,minecontrol_message& 
             // read optional fields and values: each field should be
             //  of the form "field: value"
             msg.reset_fields();
-            const_rstringstream ss;
+            const_stringstream ss;
             ss.delimit_whitespace(false);
             ss.add_extra_delimiter(':');
             while (true) {

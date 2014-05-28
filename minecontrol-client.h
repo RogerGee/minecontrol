@@ -3,7 +3,7 @@
 #define MINECONTROL_CLIENT_H
 #include "rlibrary/rdynarray.h"
 #include "minecontrol-protocol.h"
-#include "domain-socket.h"
+#include "socket.h" // gets io_device
 #include "mutex.h" // gets pthread
 
 namespace minecraft_controller
@@ -16,14 +16,15 @@ namespace minecraft_controller
         // accepts a client connection on the specified socket;
         // if the accept failed, then NULL is returned, else
         // a pointer to a dynamically allocated `controller-client'
-        // object; the memory should be freed automatically once the
+        // object; this memory will be freed automatically once the
         // client has disconnected
-        static controller_client* accept_client(domain_socket&);
+        static controller_client* accept_client(socket&);
 
         static void shutdown_clients();
 	static void close_client_sockets();
     private:
-        controller_client();
+        controller_client(socket* acceptedSocket);
+        ~controller_client();
 
         static mutex clientsMutex; // protects 'clients'
         static rtypes::dynamic_array<void*> clients; // rlibrary limitation: reduces coat-bloat
@@ -58,7 +59,8 @@ namespace minecraft_controller
         inline rtypes::rstream& prepare_list_message();
         inline rtypes::rstream& prepare_list_error();
 
-        domain_socket_stream connection;
+        socket* sock;
+        rtypes::io_stream connection;
         minecontrol_message_buffer msgbuf;
         pthread_t threadID;
         volatile bool threadCondition;

@@ -4,7 +4,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <fcntl.h> // for now
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -36,7 +36,7 @@ minecraft_server_info::minecraft_server_info()
 }
 void minecraft_server_info::read_props(str& propertyList,rstream& errorStream)
 {
-    rstringstream inputStream(propertyList);
+    stringstream inputStream(propertyList);
     inputStream.delimit_whitespace(false);
     inputStream.add_extra_delimiter("=\n");
     while ( inputStream.has_input() )
@@ -74,7 +74,7 @@ bool minecraft_server_info::set_prop(const str& key,const str& value,bool applyI
 }
 minecraft_server_info::_prop_process_flag minecraft_server_info::_process_ex_prop(const str& key,const str& value)
 {
-    const_rstringstream ss(value);
+    const_stringstream ss(value);
     if (key == "servertime") // uint64: how long the mcraft server stays alive in seconds
     {
         if ( !(ss >> serverTime) )
@@ -168,7 +168,7 @@ void minecraft_server_init_manager::read_from_file()
     if ( initFile.open_input(SERVER_INIT_FILE,file_open_existing) )
     {
         file_stream fstream(initFile);
-        rstringstream ssValue;
+        stringstream ssValue;
         ssValue.add_extra_delimiter('=');
         while (fstream.has_input())
         {
@@ -206,7 +206,7 @@ void minecraft_server_init_manager::read_from_file()
                 // handle default and override properties of the
                 // form: override-<property-key> OR default-<property-key>
                 str head;
-                rstringstream ss(key);
+                stringstream ss(key);
                 // get "override" or "default" part; if it's anything else
                 // just continue
                 ss.delimit_whitespace(false);
@@ -268,6 +268,7 @@ minecraft_server::minecraft_server()
     _internalID = 0;
     _threadID = -1;
     _processID = -1;
+    _authority = NULL;
     _threadCondition = false;
     _threadExit = mcraft_noexit;
     _maxTime = 0;
@@ -343,13 +344,19 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
                 break;
         }
         args[top++] = NULL;
-        // duplicate pipe as standard IO
+        // duplicate open ends of io channel pipe as standard IO
+        // for this process; (this will close the descriptors)
         _iochannel.standard_duplicate();
         // close all file descriptors not needed by the
         // child process; note that this is safe since
 	// the fork closed any other threads running
 	// servers off these file descriptors
-        minecontrold::close_global_fds();        
+        int maxfd;
+        maxfd = sysconf(_SC_OPEN_MAX);
+        if (maxfd == -1)
+            maxfd = 1000;
+        for (int fd = 3;fd < maxfd;++fd)
+            ::close(fd);
         // execute program
         if (::execve(_globals.exec(),args,environ) == -1)
             _exit((int)mcraft_start_server_process_fail);
@@ -374,6 +381,11 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
                 return (minecraft_server_start_condition)WEXITSTATUS(wstatus);
             return mcraft_start_failure_unknown;
         }
+        // initialize the authority which will manage the minecraft server
+        _authority = new minecontrol_authority(_iochannel);
+        // close the input side for our copy of the io channel; the authority
+        // will maintain the read end of the pipe
+        _iochannel.close_input();
         // set per-process attributes
         _internalName = info.internalName;
         _internalID = 1;
@@ -390,8 +402,6 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         _threadCondition = true;
         // assign any extended properties in minecraft_info instance
         _check_extended_options(info);
-        // initialize the authority which will manage the minecraft server
-
         // create io thread that will manage the basic status of the server process
         if (::pthread_create(&_threadID,NULL,&minecraft_server::_io_thread,this) != 0)
         {
@@ -462,6 +472,11 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
         _idSetProtect.unlock();
         _internalID = 0;
         _processID = -1;
+        if (_authority != NULL)
+        {
+            delete _authority;
+            _authority = NULL;
+        }
         _threadID = -1;
         _threadExit = mcraft_noexit;
         _maxTime = 0;
@@ -484,7 +499,11 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
     // never write more than the pipe buffer's size number of bytes (this way,
     // I don't interfere with the authority object's control of the io channel)
     minecraft_server* pserver = reinterpret_cast<minecraft_server*>(pobj);
-    pipe_stream serverIO(pserver->_iochannel); // open up a pipe stream for this thread's use; we'll use it to interrupt players with annoying time-status alerts
+    // open up a pipe stream for this thread's use; we'll use it to interrupt players with
+    // annoying time-status alerts; this pipe is a shared resource which is also used by
+    // the minecontrol authority running on a separate thread; pserver->_iochannel only
+    // has a valid output resource handle
+    pipe_stream serverIO(pserver->_iochannel);
     uint64 lastTick = _alarmTick, timeVar;
     // use pserver->_threadExit to store exit result
     pserver->_threadExit = mcraft_noexit;

@@ -9,144 +9,86 @@
 using namespace rtypes;
 using namespace minecraft_controller;
 
-/*static*/ uint64 domain_socket::_idTop = 1;
-domain_socket::domain_socket()
-    : _path(NULL), _id(0)
+// minecraft_controller::domain_socket_address
+
+domain_socket_address::domain_socket_address()
 {
+    _domainSockAddr = new sockaddr_un;
 }
-domain_socket::domain_socket_accept_condition domain_socket::accept(domain_socket& dsnew)
+domain_socket_address::domain_socket_address(const char* path)
 {
-    io_resource* pres;
-    dsnew.close();
-    pres = _getValidContext();
-    if (pres != NULL)
-    {
-        int fd = ::accept(pres->interpret_as<int>(),NULL,NULL);
-        if (fd != -1)
-        {
-            io_resource* input, *output;
-            input = new io_resource;
-            output = new io_resource(false);
-            input->assign(fd);
-            output->assign(fd);
-            // assign io contexts to device
-            dsnew._assign(input,output);
-            // release our reference to the handles
-            --_ResourceRef(input);
-            --_ResourceRef(output);
-            // assign a unique id to represent the connection
-            dsnew._id = _idTop++;
-            return domain_socket_accepted;
-        }
-        else if (errno==EINTR || errno==ECONNABORTED || errno==EBADF || errno==EINVAL)
-            return domain_socket_interrupted;
-        else
-            throw domain_socket_error();
-    }
-    return domain_socket_nodevice;
+    _domainSockAddr = new sockaddr_un;
+    assign(path);
 }
-bool domain_socket::connect(const char* path)
-{
-    size_type t, u;
-    sockaddr_un addr;
-    io_resource* pres = _getValidContext();
-    // prepare address
-    ::memset(&addr,0,sizeof(sockaddr_un));
-    t = 0;
-    u = 1;
-    while (u<sizeof(addr.sun_path) && path[t])
-    {
-        addr.sun_path[u] = path[t];
-        ++t;
-        ++u;
-    }
-    addr.sun_family = AF_UNIX;
-    // attempt connect
-    if (::connect(pres->interpret_as<int>(),(sockaddr*)&addr,sizeof(sockaddr_un)) == -1)
-        return false;
-    return true;
+domain_socket_address::~domain_socket_address()
+{ // allow virtual destructors
+    delete reinterpret_cast<sockaddr_un*>(_domainSockAddr);
 }
-bool domain_socket::shutdown()
+void domain_socket_address::_assignAddress(const char* address,const char*/*ignore service*/)
 {
-    io_resource* pres;
-    pres = _getValidContext();
-    if (pres != NULL)
-    {
-        if (::shutdown(pres->interpret_as<int>(),SHUT_RDWR) == -1)
-            return false;
-        return true;
-    }
-    return false;
-}
-void domain_socket::_openEvent(const char* deviceID,io_access_flag mode,io_resource** pinput,io_resource** poutput,void**,uint32)
-{
-    int fd;
-    // create socket
-    fd = ::socket(AF_UNIX,SOCK_STREAM,0);
-    if (fd != -1)
-    {
-        if (deviceID != NULL)
-        {
-            size_type t, u;
-            sockaddr_un addr;
-            // create address
-            ::memset(&addr,0,sizeof(sockaddr_un));
-            addr.sun_family = AF_UNIX;
-            t = 0;
-            u = 1;
-            while (u<sizeof(addr.sun_path) && deviceID[t])
-            {
-                addr.sun_path[u] = deviceID[t];
-                ++t;
-                ++u;
-            }
-            // attempt bind
-            if (::bind(fd,(sockaddr*)&addr,sizeof(sockaddr_un)) == -1)
-            {
-                ::close(fd);
-                return;
-            }
-            // attempt to make the socket passive
-            if (::listen(fd,SOMAXCONN) == -1)
-            {
-                ::close(fd);
-                return;
-            }
-            _path = deviceID;
-        }
-        // create device resources
-        if (mode & read_access)
-        {
-            *pinput = new io_resource;
-            (*pinput)->assign(fd);
-        }
-        if (mode & write_access)
-        {
-            *poutput = new io_resource(*pinput == NULL);
-            (*poutput)->assign(fd);
-        }
+    size_type i, j;
+    sockaddr_un* buffer = reinterpret_cast<sockaddr_un*>(_domainSockAddr);
+    memset(buffer,0,sizeof(sockaddr_un));
+    buffer->sun_family = AF_UNIX;
+    i = 0;
+    if (address[0] == '@') {
+        // use abstract domain-socket namespace
+        // (buffer->sun_path is already zero-filled)
+        j = 1;
+        ++address;
     }
     else
-        throw domain_socket_error();
-}
-void domain_socket::_readAll(generic_string& sbuf) const
-{
-    if ( is_valid_input() )
-    {
-        // I don't anticipate huge amounts of data being processed
-        char buffer[10000];
-        read(buffer,10000);
-        for (size_type i = 0;i<get_last_byte_count();i++)
-            sbuf.push_back(buffer[i]);
+        j = 0;
+    while (address[i] && j<sizeof(buffer->sun_path)) {
+        buffer->sun_path[j] = address[i];
+        ++i;
+        ++j;
     }
 }
-void domain_socket::_closeEvent(io_access_flag)
+bool domain_socket_address::_getNextAddress(const void*& address,rtypes::size_type& sz) const
 {
-    _path = NULL;
-    _id = 0;
+    address = _domainSockAddr;
+    sz = sizeof(sockaddr_un);
+    return false; // no more addresses available after this one
+}
+void domain_socket_address::_prepareAddressString(char* buffer,size_type length) const
+{
+    size_type i = 0, j = 0;
+    const sockaddr_un* addr = reinterpret_cast<const sockaddr_un*>(_domainSockAddr);
+    if (addr->sun_path[0] == '\0') {
+        *buffer++ = '@';
+        j = 1;
+    }
+    while (addr->sun_path[j] && i<length) {
+        buffer[i] = addr->sun_path[j];
+        ++i;
+        ++j;
+    }
+}
+
+// minecraft_controller::domain_socket
+
+domain_socket::domain_socket()
+{
+}
+void domain_socket::_openSocket(int& fd)
+{
+    // create socket
+    fd = ::socket(AF_UNIX,SOCK_STREAM,0);
+    if (fd == -1)
+        throw domain_socket_error();
+}
+void domain_socket::_createClientSocket(socket*& socknew)
+{
+    // we just need this function to get the correct socket type
+    socknew = new domain_socket;
 }
 
 domain_socket_stream_device::domain_socket_stream_device()
+{
+}
+domain_socket_stream_device::domain_socket_stream_device(domain_socket& sock)
+    : stream_device<domain_socket>(sock)
 {
 }
 domain_socket_stream_device::~domain_socket_stream_device()
@@ -170,8 +112,7 @@ bool domain_socket_stream_device::_inDevice() const
 {
     char buffer[4096];
     _device->read(buffer,4096);
-    if (_device->get_last_operation_status() == success_read)
-    {
+    if (_device->get_last_operation_status() == success_read) {
         _bufIn.push_range(buffer,_device->get_last_byte_count());
         return true;
     }
@@ -188,14 +129,14 @@ domain_socket_stream::domain_socket_stream()
 {
 }
 domain_socket_stream::domain_socket_stream(domain_socket& domain)
+    : domain_socket_stream_device(domain)
 {
-    open(domain);
 }
 
 domain_socket_binary_stream::domain_socket_binary_stream()
 {
 }
 domain_socket_binary_stream::domain_socket_binary_stream(domain_socket& domain)
+    : domain_socket_stream_device(domain)
 {
-    open(domain);
 }

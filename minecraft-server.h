@@ -179,7 +179,7 @@ namespace minecraft_controller
         rtypes::ulong _threadID;
         rtypes::int32 _processID;
         pipe _iochannel;
-        minecontrol_authority _authority;
+        minecontrol_authority* _authority;
         volatile bool _threadCondition;
         minecraft_server_exit_condition _threadExit; // (this just serves as a memory location that outlives _io_thread)
         rtypes::uint64 _maxTime;

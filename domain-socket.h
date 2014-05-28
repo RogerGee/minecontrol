@@ -1,49 +1,43 @@
 // domain-socket.h
 #ifndef DOMAIN_SOCKET_H
 #define DOMAIN_SOCKET_H
-#include "rlibrary/riodevice.h"
+#include "socket.h"
 
 namespace minecraft_controller
 {
     class domain_socket_error { };
 
-    class domain_socket : public rtypes::io_device
+    class domain_socket_address : public socket_address
     {
     public:
-        // represents the result of the accept
-        // operation on a domain socket
-        enum domain_socket_accept_condition
-        {
-            domain_socket_nodevice, // the domain socket does not exist yet
-            domain_socket_accepted, // a connection was accepted by the domain socket
-            domain_socket_interrupted // accept was interrupted; the domain socket may have been shutdown
-        };
-
-        domain_socket();
-
-        domain_socket_accept_condition accept(domain_socket& dsnew); // server
-        bool connect(const char* path); // client
-        bool shutdown();
-
-        const char* get_path() const
-        { return _path; }
-        rtypes::uint64 get_accept_id() const // gets unique id for accepted connection socket
-        { return _id; }
+        domain_socket_address();
+        domain_socket_address(const char* path);
+        virtual ~domain_socket_address();
     private:
-        static rtypes::uint64 _idTop; // maintain count of connected clients
-        const char* _path;
-        rtypes::uint64 _id;
+        void* _domainSockAddr;
 
-        // implement virtual io_device interface
-        virtual void _openEvent(const char*,rtypes::io_access_flag,rtypes::io_resource**,rtypes::io_resource**,void**,rtypes::uint32);
-        virtual void _readAll(rtypes::generic_string&) const;
-        virtual void _closeEvent(rtypes::io_access_flag);
+        virtual void _assignAddress(const char* address,const char* service);
+        virtual bool _getNextAddress(const void*& address,rtypes::size_type& sz) const;
+        virtual void _prepareAddressString(char* buffer,rtypes::size_type length) const;
+    };
+
+    class domain_socket : public socket
+    {
+    public:
+        domain_socket();
+    private:
+        // implement virtual socket interface
+        virtual void _openSocket(int& fd);
+        virtual void _createClientSocket(socket*& socknew);
+        virtual socket_family _getFamily() const
+        { return socket_family_unix; }
     };
 
     class domain_socket_stream_device : public rtypes::stream_device<domain_socket>
     {
     protected:
         domain_socket_stream_device();
+        domain_socket_stream_device(domain_socket&);
         ~domain_socket_stream_device();
     private:
         virtual void _clearDevice();

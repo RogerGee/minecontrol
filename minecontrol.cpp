@@ -1,9 +1,10 @@
 // minecontrol.cpp - minecraft-controller client application
-#include "rlibrary/rstdio.h"
+#include "rlibrary/rstdio.h" // gets io_device
 #include "rlibrary/rstringstream.h"
 #include "rlibrary/rutility.h"
 #include "minecontrol-protocol.h"
 #include "domain-socket.h"
+#include "net-socket.h"
 #include <unistd.h>
 #include <signal.h>
 #include <fcntl.h>
@@ -12,28 +13,49 @@ using namespace rtypes;
 using namespace minecraft_controller;
 
 // constants
-static const char* const DOMAIN_NAME = "minecontrol";
+static const char* const DOMAIN_NAME = "@minecontrol";
+static const char* const SERVICE_PORT = "44446";
 static const char* PROGRAM_NAME;
-static const char* const PROGRAM_VERSION = "0.6 (BETA)";
+static const char* const PROGRAM_VERSION = "0.7 (BETA)";
 
-// types
+// session_state structure: stores connection information
 struct session_state
 {
-    session_state(io_device& dev,rstream& cs)
-        : connectDevice(dev), connectStream(cs), sessionControl(true) {}
+    session_state();
+    ~session_state();
 
+    // id strings pertaining to connection
     str username;
     str serverName, serverVersion;
 
-    io_device& connectDevice;
-    rstream& connectStream;
-    rstringstream inputStream;
+    // socket/address information
+    socket* psocket;
+    socket_address* paddress;
 
+    // io enabled streams for connection and terminal
+    io_stream connectStream;
+    stringstream inputStream;
+
+    // minecontrol protocol messages
     minecontrol_message response;
     minecontrol_message_buffer request;
 
+    // session alive control
     bool sessionControl;
 };
+session_state::session_state()
+{
+    psocket = NULL;
+    paddress = NULL;
+    sessionControl = true;
+}
+session_state::~session_state()
+{
+    if (psocket != NULL)
+        delete psocket;
+    if (paddress != NULL)
+        delete paddress;
+}
 
 // signal handlers
 static void sigpipe_handler(int); // handle SIGPIPE
@@ -52,25 +74,33 @@ static void start(session_state& session);
 static void stop(session_state& session);
 static void any_command(const generic_string& command,session_state& session); // these commands do not provide an interactive mode
 
-int main(int,const char* argv[])
+int main(int argc,const char* argv[])
 {
-    domain_socket_stream sockstream;
-    domain_socket& sock = sockstream.get_device();
-    session_state session(sock,sockstream);
     PROGRAM_NAME = argv[0];
-
     // attempt to setup SIGPIPE handler
     if (::signal(SIGPIPE,&sigpipe_handler) == SIG_ERR) {
         errConsole << PROGRAM_NAME << ": couldn't set up signal handler for SIGPIPE\n";
         return 1;
     }
 
-    // attempt to connect to domain server
-    sock.open();
-    if ( !sock.connect(DOMAIN_NAME) ) {
-        errConsole << PROGRAM_NAME << ": couldn't establish connection with minecraft-control\n";
+    session_state session;
+    // setup session with the correct stream and io device
+    if (argc > 1) { // use network socket        
+        session.psocket = new network_socket;
+        session.paddress = new network_socket_address(argv[1],SERVICE_PORT);
+    }
+    else { // use domain socket
+        session.psocket = new domain_socket;
+        session.paddress = new domain_socket_address(DOMAIN_NAME);
+    }
+
+    // create socket and attempt to establish connection with minecontrol server
+    session.psocket->open();
+    if ( !session.psocket->connect(*session.paddress) ) {
+        errConsole << PROGRAM_NAME << ": couldn't establish connection with " << session.paddress->get_address_string() << endline;
         return 1;
     }
+    session.connectStream.assign(*session.psocket);
 
     // perform the hello exchange
     if ( !hello_exchange(session) ) {
@@ -78,6 +108,7 @@ int main(int,const char* argv[])
         return 1;
     }
 
+    // greetings were received; connection is up
     stdConsole << "Connection established: client '" 
                << PROGRAM_NAME << '-' << PROGRAM_VERSION << " ---> " 
                << session.serverName << '-' << session.serverVersion << newline;
@@ -107,6 +138,8 @@ int main(int,const char* argv[])
         else
             any_command(command,session);
     };
+
+    return 0;
 }
 
 void sigpipe_handler(int signal)
@@ -155,7 +188,7 @@ bool request_response_sequence(session_state& session)
     // read the response
     session.connectStream >> session.response;
     // see if the connection is still good
-    if ( !check_status(session.connectDevice) ) {
+    if ( !check_status(session.connectStream.get_device()) ) {
         session.sessionControl = false;
         return false;
     }

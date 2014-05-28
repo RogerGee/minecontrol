@@ -31,18 +31,20 @@ endif
 
 # dependencies
 PIPE_H = pipe.h
-DOMAIN_SOCKET_H = domain-socket.h
+SOCKET_H = socket.h
 MUTEX_H = mutex.h
 MINECRAFT_CONTROLLER_H = minecraft-controller.h
 MINECONTROL_PROTOCOL_H = minecontrol-protocol.h
+DOMAIN_SOCKET_H = domain-socket.h $(SOCKET_H)
+NET_SOCKET_H = net-socket.h $(SOCKET_H)
 MINECRAFT_SERVER_H = minecraft-server.h $(PIPE_H)
 MINECRAFT_SERVER_PROPERTIES_H = minecraft-server-properties.h minecraft-server-properties.tcc
 MINECONTROL_AUTHORITY_H = minecontrol-authority.h $(PIPE_H)
 MINECONTROL_CLIENT_H = minecontrol-client.h $(DOMAIN_SOCKET_H) $(MUTEX_H) $(MINECONTROL_PROTOCOL_H)
 
 # object code
-OBJECTS_SERVER = minecraft-controller.o minecraft-server.o minecraft-server-properties.o minecontrol-client.o minecontrol-authority.o domain-socket.o pipe.o mutex.o minecontrol-protocol.o
-OBJECTS_CLIENT = minecontrol.o domain-socket.o minecontrol-protocol.o
+OBJECTS_SERVER = minecraft-controller.o minecraft-server.o minecraft-server-properties.o minecontrol-client.o minecontrol-authority.o socket.o domain-socket.o net-socket.o pipe.o mutex.o minecontrol-protocol.o
+OBJECTS_CLIENT = minecontrol.o socket.o domain-socket.o net-socket.o minecontrol-protocol.o
 
 # make objects relative to object directory
 OBJECTS_SERVER := $(addprefix $(OBJECT_DIRECTORY),$(OBJECTS_SERVER))
@@ -80,8 +82,14 @@ $(OBJECT_DIRECTORY)minecontrol-authority.o: minecontrol-authority.cpp $(MINECONT
 $(OBJECT_DIRECTORY)minecontrol-protocol.o: minecontrol-protocol.cpp $(MINECONTROL_PROTOCOL_H)
 	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)minecontrol-protocol.o minecontrol-protocol.cpp
 
+$(OBJECT_DIRECTORY)socket.o: socket.cpp $(SOCKET_H)
+	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)socket.o socket.cpp
+
 $(OBJECT_DIRECTORY)domain-socket.o: domain-socket.cpp $(DOMAIN_SOCKET_H)
 	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)domain-socket.o domain-socket.cpp
+
+$(OBJECT_DIRECTORY)net-socket.o: net-socket.cpp $(NET_SOCKET_H)
+	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)net-socket.o net-socket.cpp
 
 $(OBJECT_DIRECTORY)pipe.o: pipe.cpp $(PIPE_H)
 	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)pipe.o pipe.cpp

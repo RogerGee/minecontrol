@@ -47,8 +47,8 @@ namespace minecraft_controller
         rtypes::str _header;
         rtypes::str _command;
         rtypes::str _fields, _values;
-        mutable rtypes::const_rstringstream _fieldKeys;
-        mutable rtypes::const_rstringstream _fieldValues;
+        mutable rtypes::const_stringstream _fieldKeys;
+        mutable rtypes::const_stringstream _fieldValues;
     };
 
     rtypes::rstream& operator >>(rtypes::rstream&,minecontrol_message&);

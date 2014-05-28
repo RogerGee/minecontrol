@@ -11,7 +11,7 @@ pipe::pipe()
 void pipe::standard_duplicate(bool includeError)
 {
     // this member function should run on a pipe object that exists in
-    // a forked process
+    // a forked child process
     if ( is_valid_context() )
     {
         // duplicate open ends of created pipes as standard input/output
@@ -103,8 +103,8 @@ pipe_stream::pipe_stream()
 {
 }
 pipe_stream::pipe_stream(pipe& device)
+    : stream_device<pipe>(device)
 {
-    open(device);
 }
 pipe_stream::~pipe_stream()
 {

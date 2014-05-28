@@ -28,7 +28,7 @@ void minecraft_controller::minecraft_server_property<T>::put(rtypes::rstream& st
 template<typename T>
 bool minecraft_controller::minecraft_server_property<T>::set_value(const rtypes::str& value)
 {
-    rtypes::const_rstringstream ss(value);
+    rtypes::const_stringstream ss(value);
     if ( _readValue(ss) )
     {
         // since the user intentionally is setting the value (and it was successful),
