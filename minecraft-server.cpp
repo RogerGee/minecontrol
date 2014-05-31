@@ -383,7 +383,7 @@ void minecraft_server::extend_time_limit(uint32 hoursMore)
         _maxTime += secondsMore;
         // compile a message to inform players of the time limit change
         msg << "say An administrator has extended the time limit by " << hoursMore
-            << (hoursMore>1 ? "s" : "") << ". ";
+            << (hoursMore>1 ? " hours" : " hour") << ". \nsay ";
         remaining = _maxTime - _elapsed;
         msg << "Time remaining: " << remaining/3600 << ':';
         remaining %= 3600;
