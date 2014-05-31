@@ -1,10 +1,10 @@
 // minecontrol.cpp - minecraft-controller client application
-#include "rlibrary/rstdio.h" // gets io_device
-#include "rlibrary/rstringstream.h"
-#include "rlibrary/rutility.h"
 #include "minecontrol-protocol.h"
 #include "domain-socket.h"
 #include "net-socket.h"
+#include <rlibrary/rstdio.h> // gets io_device
+#include <rlibrary/rstringstream.h>
+#include <rlibrary/rutility.h>
 #include <unistd.h>
 #include <signal.h>
 #include <fcntl.h>
@@ -37,6 +37,7 @@ struct session_state
     stringstream inputStream;
 
     // minecontrol protocol messages
+    crypt_session* pcrypto;
     minecontrol_message response;
     minecontrol_message_buffer request;
 
@@ -47,6 +48,7 @@ session_state::session_state()
 {
     psocket = NULL;
     paddress = NULL;
+    pcrypto = NULL;
     sessionControl = true;
 }
 session_state::~session_state()
@@ -55,6 +57,8 @@ session_state::~session_state()
         delete psocket;
     if (paddress != NULL)
         delete paddress;
+    if (pcrypto != NULL)
+        delete pcrypto;
 }
 
 // signal handlers
@@ -71,6 +75,7 @@ static bool hello_exchange(session_state& session);
 static void login(session_state& session); // these commands provide an interactive mode for input
 static void logout(session_state& session);
 static void start(session_state& session);
+static void extend(session_state& session);
 static void stop(session_state& session);
 static void any_command(const generic_string& command,session_state& session); // these commands do not provide an interactive mode
 
@@ -131,6 +136,8 @@ int main(int argc,const char* argv[])
             logout(session);
         else if (command == "start")
             start(session);
+        else if (command == "extend")
+            extend(session);
         else if (command == "stop")
             stop(session);
         else if (command == "quit")
@@ -288,8 +295,18 @@ bool hello_exchange(session_state& session)
             res.get_field_value_stream() >> session.serverName;
         else if (key == "version")
             res.get_field_value_stream() >> session.serverVersion;
+        else if (key == "encryptkey") {
+            // the server sent the public key (modulus and exponent)
+            str encryptKey;
+            res.get_field_value_stream() >> encryptKey;
+            try {
+                session.pcrypto = new crypt_session(encryptKey);
+            } catch (minecontrol_encrypt_error) {
+                return false;
+            }
+        }
     }
-    return session.serverName.length()>0 && session.serverVersion.length()>0;
+    return session.serverName.length()>0 && session.serverVersion.length()>0 && session.pcrypto!=NULL;
 }
 
 void login(session_state& session)
@@ -310,7 +327,7 @@ void login(session_state& session)
     // create request message
     session.request.begin("LOGIN");
     session.request.enqueue_field_name("Username");
-    session.request.enqueue_field_name("Password");
+    session.request.enqueue_field_name("Password",session.pcrypto);
     session.request << username << newline << password << flush;
     if ( request_response_sequence(session) )
         session.username = username;
@@ -336,6 +353,9 @@ void start(session_state& session)
         else
             name = s;
         session.inputStream.getline(props);
+        for (size_type i = 0;i<props.length();++i)
+            if (props[i] == '\\')
+                props[i] = '\n';
     }
     else {
         stdConsole << "Enter server name: ";
@@ -363,6 +383,25 @@ void start(session_state& session)
     session.request << name << newline << modifier << newline;
     insert_field_expression(session.request,props);
     session.request << flush;
+    request_response_sequence(session);
+}
+
+void extend(session_state& session)
+{
+    str tokA, tokB;
+    session.inputStream >> tokA >> tokB;
+    if (tokA.length() == 0) {
+        stdConsole << "Enter ID of running server: ";
+        stdConsole >> tokA;
+    }
+    if (tokB.length() == 0) {
+        stdConsole << "Enter time to extend (hours): ";
+        stdConsole >> tokB;
+    }
+    session.request.begin("EXTEND");
+    session.request.enqueue_field_name("ServerID");
+    session.request.enqueue_field_name("Amount");
+    session.request << tokA << tokB << flush;
     request_response_sequence(session);
 }
 

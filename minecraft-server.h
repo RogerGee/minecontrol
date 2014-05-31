@@ -3,8 +3,8 @@
 #define MINECRAFT_SERVER_H
 #include "minecraft-server-properties.h" // gets rstringstream
 #include "minecontrol-authority.h"
-#include "rlibrary/rdynarray.h"
-#include "rlibrary/rset.h"
+#include <rlibrary/rdynarray.h>
+#include <rlibrary/rset.h>
 #include "pipe.h"
 #include "mutex.h"
 
@@ -14,14 +14,13 @@ namespace minecraft_controller
 
     struct minecraft_server_info
     {
-        minecraft_server_info();
-        virtual ~minecraft_server_info() {}
+        minecraft_server_info(bool createNew,const char* serverName,const char* homeDir,int userID,int groupID);
 
         /* attributes for server startup: these determine the context in which a minecraft
            server runs or is created */
         bool isNew; // request (if possible) that a new server be made with the specified name
         rtypes::str internalName; // corresponds to the directory that contains the Minecraft server files
-        const char* homeDirectory; // home directory of user currently logged in
+        rtypes::str homeDirectory; // home directory of user currently logged in
         int uid, guid; // associated user and group id of currently logged-in user
 
         /* extended properties: these properties extend those found in server.properties, often
@@ -42,12 +41,9 @@ namespace minecraft_controller
            if the current property value was not user-supplied */
         bool set_prop(const rtypes::str& key,const rtypes::str& value,bool applyIfDefault = false);
 
-        /* writes properties in the correct format for the 'server.properties'
-           file used by the minecraft server process; only properties that
-           exist in the server.properties file are included */
-        void put_props(rtypes::rstream& stream) const
-        { _put_props(stream); }
-    protected:
+        const minecraft_server_property_list& get_props() const
+        { return _properties; }
+    private:
         enum _prop_process_flag
         {
             _prop_process_success,
@@ -55,19 +51,11 @@ namespace minecraft_controller
             _prop_process_bad_value,
             _prop_process_undefined
         };
-    private:
-        _prop_process_flag _process_ex_prop(const rtypes::str& key,const rtypes::str& value);
-        virtual _prop_process_flag _process_prop(const rtypes::str& key,const rtypes::str& value,bool applyIfDefault = false);
-        virtual void _put_props(rtypes::rstream&) const;
-    };
 
-    struct minecraft_server_info_ex : minecraft_server_info
-    {
-    private:
         minecraft_server_property_list _properties;
 
-        virtual _prop_process_flag _process_prop(const rtypes::str& key,const rtypes::str& value,bool applyIfDefault);
-        virtual void _put_props(rtypes::rstream&) const;
+        _prop_process_flag _process_ex_prop(const rtypes::str& key,const rtypes::str& value);
+        _prop_process_flag _process_prop(const rtypes::str& key,const rtypes::str& value,bool applyIfDefault = false);
     };
 
     class minecraft_server_init_manager
@@ -144,6 +132,8 @@ namespace minecraft_controller
         // spawns a child process that executes the minecraft
         // server Java binary
         minecraft_server_start_condition begin(minecraft_server_info&);
+
+        void extend_time_limit(rtypes::uint32 hoursMore);
 
         // requests that the server shutdown by issuing "stop"
         // to the server's standard input; "end" should be called

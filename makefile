@@ -12,8 +12,8 @@ PACKAGE_NAME = minecontrol.deb
 OBJECT_DIRECTORY_NAME = obj/
 OBJECT_DIRECTORY_NAME_DEBUG = dobj/
 LINK = g++
-LIBRARY_SERVER = -lrlibrary -pthread -lcrypt
-LIBRARY_CLIENT = -lrlibrary
+LIBRARY_SERVER = -lrlibrary -pthread -lcrypt -lcrypto
+LIBRARY_CLIENT = -lrlibrary -lcrypto
 OUT = -o 
 
 # programs and options based on configuration

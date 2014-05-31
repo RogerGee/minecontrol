@@ -108,8 +108,9 @@ sent. The client simply needs to shutdown the socket connection to cleanly disco
          Name:
          Version: 
         LOGIN
-         Username:
-         Password:
+         Username: <username>
+         Password: <encrypted-password>         (note: this string is created by taking 128 bytes and converting each one to a hexadecimal string; each
+                                                       hexadecimal value should be separated by whitespace like so: 78 A7 98)
         LOGOUT
         START
          IsNew: true|false
@@ -119,6 +120,9 @@ sent. The client simply needs to shutdown the socket connection to cleanly disco
          [minecraft server properties from server.properties]
          PropertyName: PropertyValue
         STATUS
+        EXTEND
+         ServerID: [integer number]
+         Amount: [integer number (hours to extend)]
         STOP
          ServerID: [integer number]
         CONSOLE
@@ -126,8 +130,9 @@ sent. The client simply needs to shutdown the socket connection to cleanly disco
 
       Responses:
         GREETINGS
-         Name:
-         Version: 
+         Name: <name string>
+         Version: <version string>
+         EncryptKey: PUBLIC-MODULES-HEX-STRING|PUBLIC_EXPONENT-HEX-STRING       (note: big-endian format is used as per BN_bn2bin)
         MESSAGE
          Payload: [message]
         LIST-MESSAGE
@@ -138,3 +143,15 @@ sent. The client simply needs to shutdown the socket connection to cleanly disco
          (etc)
         ERROR
          Payload: [message]
+
+RSA Cryptography
+    Minecontrol employs the OpenSSL Crypto library to provide encryption for sensitive
+data fields in protocol messages. The server will deliver a public key of a specific
+format with its normal GREETINGS response. Certain fields in the commands listed
+above require their values to be encrypted using the crypto RSA public-private key
+method.
+
+    Other applications implementing this protocol need to somehow employ the OpenSSL
+library. If C++ bindings can be used, the classes implemented by minecontrol-protocol.h
+and minecontrol-protocol.cpp can be used to implement an interface for another programming
+language.

@@ -1,7 +1,7 @@
 // pipe.h - simple pipe device/stream types
 #ifndef PIPE_H
 #define PIPE_H
-#include "rlibrary/riodevice.h"
+#include <rlibrary/riodevice.h>
 
 namespace minecraft_controller
 {

@@ -1,7 +1,7 @@
 // minecraft-controller.h
 #ifndef MINECRAFT_CONTROLLER_H
 #define MINECRAFT_CONTROLLER_H
-#include "rlibrary/rstream.h"
+#include <rlibrary/rstream.h>
 
 namespace minecraft_controller
 {

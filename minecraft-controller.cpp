@@ -1,6 +1,11 @@
 // minecraft-controller.cpp
-#include "rlibrary/rstdio.h"
-#include "rlibrary/rstringstream.h"
+#include "minecraft-server.h"
+#include "minecontrol-client.h"
+#include "minecraft-controller.h"
+#include "domain-socket.h"
+#include "net-socket.h"
+#include <rlibrary/rstdio.h>
+#include <rlibrary/rstringstream.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <signal.h>
@@ -10,11 +15,6 @@
 #include <pthread.h>
 #include <errno.h>
 #include <string.h>
-#include "minecraft-server.h"
-#include "minecontrol-client.h"
-#include "minecraft-controller.h"
-#include "domain-socket.h"
-#include "net-socket.h"
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -69,16 +69,13 @@ int main(int,const char*[])
 
 void daemonize()
 {
-    return;//test
     // let's become a daemon
     pid_t pid = ::fork();
-    if (pid == -1)
-    {
+    if (pid == -1) {
         minecontrold::standardLog << "fatal: cannot fork a child process" << endline;
         ::_exit(1);
     }
-    if (pid == 0) // child process stays alive
-    {
+    if (pid == 0) { // child process stays alive
         // become the leader of a new session and process group; this 
         // removes the controlling terminal from the process group
         if (::setsid() == -1)
@@ -87,12 +84,10 @@ void daemonize()
         ::umask(0);
         // attempt to create minecontrold init-dir if it does not already exist
         struct stat stbuf;
-        if (stat(INIT_DIR,&stbuf) == -1)
-        {
+        if (stat(INIT_DIR,&stbuf) == -1) {
             if (errno != ENOENT)
                 fatal_error("cannot access file information for initial directory");
-            if (mkdir(INIT_DIR,S_IRWXU) == -1)
-            {
+            if (mkdir(INIT_DIR,S_IRWXU) == -1) {
                 if (errno == EACCES)
                     fatal_error("cannot create initial directory: access denied");
                 fatal_error("cannot create initial directory");
@@ -101,8 +96,7 @@ void daemonize()
         else if ( !S_ISDIR(stbuf.st_mode) )
             fatal_error("initial directory exists as something other than a directory");
         // set working directory to minecontrold init-dir
-        if (::chdir(INIT_DIR) == -1)
-        {
+        if (::chdir(INIT_DIR) == -1) {
             if (errno == EACCES)
                 fatal_error("cannot change current directory to needed initial directory: access denied");
             fatal_error("cannot change current directory to needed initial directory");
@@ -113,8 +107,7 @@ void daemonize()
         //  null to STDIN
         fd = ::open(LOG_FILE,O_RDWR|O_CREAT|O_APPEND,S_IRUSR|S_IWUSR);
         fdNull = ::open("/dev/null",O_RDWR);
-        if (fd == -1)
-        {
+        if (fd == -1) {
             if (errno == EACCES)
                 fatal_error("cannot open log file: permission denied: this process must be privileged");
             fatal_error("cannot open log file");
@@ -126,8 +119,7 @@ void daemonize()
         ::close(fd);
         ::close(fdNull);
     }
-    else
-    {
+    else {
         stdConsole << '[' << pid << "] " << minecontrold::get_server_name() << " started" << endline;
         ::_exit(0);
     }

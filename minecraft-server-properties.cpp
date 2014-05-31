@@ -1,6 +1,6 @@
 // minecraft-server-properties.cpp
 #include "minecraft-server-properties.h"
-#include "rlibrary/rutility.h"
+#include <rlibrary/rutility.h>
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -99,4 +99,40 @@ minecraft_string_property_list::minecraft_string_property_list()
     _pushBack( new mcraft_resource_pack );
     _pushBack( new mcraft_server_ip );
     _pushBack( new mcraft_server_name );
+}
+
+// minecraft_controller::minecraft_server_property_list
+void minecraft_server_property_list::read(rstream& input)
+{
+    stringstream lineInput;
+    lineInput.delimit_whitespace(false);
+    lineInput.add_extra_delimiter("=\n");
+    while ( input.has_input() ) {
+        str key, value;
+        lineInput.clear();
+        input.getline( lineInput.get_device() );
+        lineInput >> key >> value;
+        if (key.length() > 0) {
+            // check each type of property; if not found then strip
+            // from the properties list
+            minecraft_server_property<bool>* bprop;
+            minecraft_server_property<int>* iprop;
+            minecraft_server_property<str>* sprop;
+            if ((bprop = booleanProps.lookup(key.c_str())) != NULL)
+                bprop->set_value(value);
+            else if ((iprop = numericProps.lookup(key.c_str())) != NULL)
+                iprop->set_value(value);
+            else if ((sprop = stringProps.lookup(key.c_str())) != NULL)
+                sprop->set_value(value);
+        }
+    }
+}
+void minecraft_server_property_list::write(rstream& output) const
+{
+    for (size_type i = 0;i<booleanProps.size();i++)
+        booleanProps[i]->put(output), output << newline;
+    for (size_type i = 0;i<numericProps.size();i++)
+        numericProps[i]->put(output), output << newline;
+    for (size_type i = 0;i<stringProps.size();i++)
+        stringProps[i]->put(output), output << newline;
 }

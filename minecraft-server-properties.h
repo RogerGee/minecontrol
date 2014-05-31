@@ -2,8 +2,8 @@
 #ifndef MINECRAFT_SERVER_PROPERTIES_H
 #define MINECRAFT_SERVER_PROPERTIES_H
 #include <string.h>
-#include "rlibrary/rstringstream.h" // gets rstream
-#include "rlibrary/rdynarray.h"
+#include <rlibrary/rstringstream.h> // gets rstream
+#include <rlibrary/rdynarray.h>
 
 namespace minecraft_controller
 {
@@ -426,6 +426,9 @@ namespace minecraft_controller
         minecraft_boolean_property_list booleanProps;
         minecraft_numeric_property_list numericProps;
         minecraft_string_property_list stringProps;
+
+        void read(rtypes::rstream&);
+        void write(rtypes::rstream&) const;
     };
     //
 }

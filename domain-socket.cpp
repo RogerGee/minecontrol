@@ -1,5 +1,4 @@
 // domain-socket.cpp
-#include "rlibrary/rstdio.h"
 #include "domain-socket.h"
 #include <sys/types.h>
 #include <sys/un.h>

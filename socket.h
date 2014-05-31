@@ -1,7 +1,7 @@
 // socket.h
 #ifndef SOCKET_H
 #define SOCKET_H
-#include "rlibrary/riodevice.h"
+#include <rlibrary/riodevice.h>
 
 namespace minecraft_controller
 {

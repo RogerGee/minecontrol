@@ -1,8 +1,177 @@
 // minecontrol-protocol.cpp
 #include "minecontrol-protocol.h"
-#include "rlibrary/rutility.h"
+#include <cstring>
+#include <rlibrary/rutility.h>
+#include <rlibrary/rstdio.h> //test
+#include <openssl/rsa.h>
 using namespace rtypes;
 using namespace minecraft_controller;
+
+/* the openssl library has global allocations that
+   are outstanding; so as to not interfere with 
+   memory leak checks, I invoke a non-thread-safe
+   function to release that memory at application
+   shutdown time; (there should be no other global
+   destruction code that requires openssl) */
+static class __openssl_initcleanup__
+{
+public:
+    __openssl_initcleanup__()
+    {
+    }
+    ~__openssl_initcleanup__()
+    {
+        CRYPTO_cleanup_all_ex_data();
+    }
+} __opensslinitcleanupobj__;
+
+// minecraft_controller::crypt_session
+
+/*static*/ const int crypt_session::_bits = 1024;
+/*static*/ const int crypt_session::_bytes = 128;
+crypt_session::crypt_session()
+{
+    // create a public-private key pair
+    RSA* keypair;
+    BIGNUM* e;
+    if ((keypair = RSA_new()) == NULL)
+        throw minecontrol_message_error();
+    e = BN_new();
+    BN_set_word(e,65537);
+    if ( !RSA_generate_key_ex(keypair,_bits,e,NULL) )
+        throw minecontrol_message_error();
+    BN_free(e);
+    _internal = keypair;
+}
+crypt_session::crypt_session(const generic_string& publicKey)
+{
+    // create a public key based on the input string
+    RSA* pubkey;
+    int lenN, lenE;
+    const_stringstream ss(publicKey);
+    unsigned char bufferN[1024];
+    unsigned char bufferE[1024];
+    ss.representation(hexadecimal);
+    lenN = 0;
+    while (ss.has_input() && ss.peek()!='|' && lenN<1024) {
+        uint16 i;
+        ss >> i;
+        if ( !ss.get_input_success() )
+            throw minecontrol_encrypt_error();
+        bufferN[lenN++] = i&0xff;
+    }
+    if (ss.peek() != '|')
+        throw minecontrol_encrypt_error();
+    ss.get();
+    lenE = 0;
+    while (ss.has_input() && lenE<1024) {
+        uint16 i;
+        ss >> i;
+        if ( !ss.get_input_success() )
+            throw minecontrol_encrypt_error();
+        bufferE[lenE++] = i&0xff;
+    }
+    if ((pubkey = RSA_new()) == NULL)
+        throw minecontrol_message_error();
+    pubkey->n = BN_bin2bn(bufferN,lenN,NULL);
+    pubkey->e = BN_bin2bn(bufferE,lenE,NULL);
+    _internal = pubkey;
+}
+crypt_session::~crypt_session()
+{
+    if (_internal != NULL)
+        RSA_free(reinterpret_cast<RSA*>(_internal));
+}
+bool crypt_session::encrypt(const char* source,generic_string& result) const
+{
+    if (_internal != NULL) {
+        int encryptlen;
+        RSA* rsadata = reinterpret_cast<RSA*>(_internal);
+        int length = strlen(source);
+        unsigned char buffer[_bytes];
+        // see if we have a public key
+        if (rsadata->n==NULL || rsadata->e==NULL)
+            return false;
+        // encrypt data
+        if ((encryptlen = RSA_public_encrypt(length,(unsigned char*)source,buffer,rsadata,RSA_PKCS1_PADDING)) == -1)
+            return false;
+        // encode data as hexadecimal text
+        ref_stringstream ss(result);
+        ss.clear();
+        ss.representation(hexadecimal);
+        ss.width(2);
+        ss.fill('0');
+        for (int i = 0;i < encryptlen;++i)
+            ss << uint16(buffer[i]) << ' ';
+        return true;
+    }
+    return false;
+}
+bool crypt_session::decrypt(const char* source,generic_string& result) const
+{
+    if (_internal != NULL) {
+        int length;
+        RSA* rsadata = reinterpret_cast<RSA*>(_internal);
+        stringstream ss(source);
+        int decryptLength;
+        unsigned char bufferSource[_bytes];
+        unsigned char bufferDestin[_bytes];
+        // check to see if we have a private key
+        if (rsadata->d == NULL)
+            return false;
+        // decode data from hexadecimal text
+        ss.representation(hexadecimal);
+        length = 0;
+        while (ss.has_input() && length<_bytes) {
+            uint16 i;
+            ss >> i;
+            if ( !ss.get_input_success() )
+                return false;
+            bufferSource[length++] = i&0xff;
+        }
+        if (length != _bytes)
+            return false;
+        // decrypt data
+         if ((decryptLength = RSA_private_decrypt(length,bufferSource,bufferDestin,rsadata,RSA_PKCS1_PADDING)) == -1)
+            return false;
+        result.clear();
+        for (int i = 0;i < decryptLength;++i)
+            result.push_back(bufferDestin[i]);
+        return true;
+    }
+    return false;
+}
+string crypt_session::get_public_key() const
+{
+    string result;
+    if (_internal != NULL) {
+        RSA* rsadata = reinterpret_cast<RSA*>(_internal);
+        int lengthN = BN_num_bytes(rsadata->n);
+        int lengthE = BN_num_bytes(rsadata->e);
+        ref_stringstream ss(result);
+        unsigned char* bufferN = new unsigned char[lengthN + lengthE];
+        unsigned char* bufferE = bufferN+lengthN;
+        // place public key into buffer
+        BN_bn2bin(rsadata->n,bufferN);
+        BN_bn2bin(rsadata->e,bufferE);
+        /* get a text-representation of the public key in the following format:
+            PUBLIC-MODULUS|PUBLIC-EXPONENT
+             where PUBLIC-MODULUS and PUBLIC-EXPONENT are strings of hexadecimal
+            digits that encode the binary number using little-endian representation */
+        ss.representation(hexadecimal);
+        ss.width(2);
+        ss.fill('0');
+        for (int i = 0;i < lengthN;++i)
+            ss << uint16(bufferN[i]) << ' ';
+        ss << "| ";
+        for (int i = 0;i < lengthE;++i)
+            ss << uint16(bufferE[i]) << ' ';
+        delete[] bufferN;
+    }
+    return result;
+}
+
+// minecraft_controller::minecontrol_message
 
 /*static*/ const char* const minecontrol_message::MINECONTROL_PROTO_HEADER = "MINECONTROL-PROTOCOL";
 minecontrol_message::minecontrol_message()
@@ -34,11 +203,18 @@ void minecontrol_message::assign_command(const char* command)
     _header = MINECONTROL_PROTO_HEADER;
     _command = command;
 }
-void minecontrol_message::add_field(const char* field,const char* value)
+void minecontrol_message::add_field(const char* field,const char* value,const crypt_session* encrypt)
 {
     _fields += field;
     _fields.push_back('\n'); // delimit the field name
-    _values += value;
+    if (encrypt != NULL) {
+        str result;
+        if ( !encrypt->encrypt(value,result) )
+            throw minecontrol_encrypt_error();
+        _values += result;
+    }
+    else
+        _values += value;
     _values.push_back('\n'); // delimit the value
 }
 void minecontrol_message::reset_fields()
@@ -125,9 +301,9 @@ void minecontrol_message_buffer::begin(const char* command)
     _fields.clear();
     _repeatField = NULL;
 }
-void minecontrol_message_buffer::enqueue_field_name(const char* fieldName)
+void minecontrol_message_buffer::enqueue_field_name(const char* fieldName,const crypt_session* encrypt)
 {
-    _fields.push(fieldName);
+    _fields.push( field_item(fieldName,encrypt) );
 }
 void minecontrol_message_buffer::repeat_field(const char* fieldName)
 {
@@ -156,14 +332,14 @@ void minecontrol_message_buffer::_outDevice()
 {
     while ( !_fields.is_empty() ) {
         str value;
-        const string field = _fields.pop();
+        const field_item field = _fields.pop();
         while ( !_bufOut.is_empty() ) {
             char c = _bufOut.pop();
             if (c == '\n')
                 break;
             value.push_back(c);
         }
-        _message.add_field(field.c_str(),value.c_str());
+        _message.add_field(field.field.c_str(),value.c_str(),field.encrypt);
     }
     if (_repeatField != NULL) {
         while ( !_bufOut.is_empty() ) {

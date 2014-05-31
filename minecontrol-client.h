@@ -1,7 +1,7 @@
 // minecontrol-client.h
 #ifndef MINECONTROL_CLIENT_H
 #define MINECONTROL_CLIENT_H
-#include "rlibrary/rdynarray.h"
+#include <rlibrary/rdynarray.h>
 #include "minecontrol-protocol.h"
 #include "socket.h" // gets io_device
 #include "mutex.h" // gets pthread
@@ -48,6 +48,7 @@ namespace minecraft_controller
         bool command_logout(rtypes::rstream&,rtypes::rstream&);
         bool command_start(rtypes::rstream&,rtypes::rstream&);
         bool command_status(rtypes::rstream&,rtypes::rstream&);
+        bool command_extend(rtypes::rstream&,rtypes::rstream&);
         bool command_stop(rtypes::rstream&,rtypes::rstream&);
         bool command_console(rtypes::rstream&,rtypes::rstream&);
         bool command_shutdown(rtypes::rstream&,rtypes::rstream&);
@@ -62,6 +63,7 @@ namespace minecraft_controller
         socket* sock;
         rtypes::io_stream connection;
         minecontrol_message_buffer msgbuf;
+        crypt_session crypto;
         pthread_t threadID;
         volatile bool threadCondition;
         int uid, guid;
