@@ -191,7 +191,6 @@ bool check_status(io_device& device)
 bool request_response_sequence(session_state& session)
 {
     // make the request
-    stdConsole << session.request.get_message() << endline;
     session.connectStream << session.request.get_message();
     // read the response
     session.connectStream >> session.response;
