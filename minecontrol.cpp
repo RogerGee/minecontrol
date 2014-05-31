@@ -191,6 +191,7 @@ bool check_status(io_device& device)
 bool request_response_sequence(session_state& session)
 {
     // make the request
+    stdConsole << session.request.get_message() << endline;
     session.connectStream << session.request.get_message();
     // read the response
     session.connectStream >> session.response;
@@ -401,7 +402,7 @@ void extend(session_state& session)
     session.request.begin("EXTEND");
     session.request.enqueue_field_name("ServerID");
     session.request.enqueue_field_name("Amount");
-    session.request << tokA << tokB << flush;
+    session.request << tokA << newline << tokB << flush;
     request_response_sequence(session);
 }
 

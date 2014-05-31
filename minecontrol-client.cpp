@@ -413,6 +413,8 @@ bool controller_client::command_extend(rstream& kstream,rstream& vstream)
     servers[i]->pserver->extend_time_limit(hours);
     prepare_message() << "Time limit for server '" << servers[i]->pserver->get_internal_name() << "' was extended" << flush;
     connection << msgbuf.get_message();
+    // give control of minecraft server(s) back to the manager
+    minecraft_server_manager::attach_server(&servers[0],servers.size());
     return true;
 }
 bool controller_client::command_stop(rstream& kstream,rstream& vstream)
