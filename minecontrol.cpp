@@ -16,7 +16,7 @@ using namespace minecraft_controller;
 static const char* const DOMAIN_NAME = "@minecontrol";
 static const char* const SERVICE_PORT = "44446";
 static const char* PROGRAM_NAME;
-static const char* const PROGRAM_VERSION = "0.7 (BETA)";
+static const char* const PROGRAM_VERSION = "0.8 (BETA)";
 
 // session_state structure: stores connection information
 struct session_state

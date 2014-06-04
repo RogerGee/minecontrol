@@ -21,7 +21,7 @@ namespace minecraft_controller
 
         bool encrypt(const char* source,rtypes::generic_string& result) const;
         bool decrypt(const char* source,rtypes::generic_string& result) const;
-        rtypes::string get_public_key() const;
+        rtypes::str get_public_key() const;
     private:
         static const int _bits;
         static const int _bytes;
@@ -62,6 +62,8 @@ namespace minecraft_controller
         { return _fieldKeys; }
         rtypes::rstream& get_field_value_stream() const
         { return _fieldValues; }
+
+        rtypes::str get_protocol_message() const;
     private:
         static const char* const MINECONTROL_PROTO_HEADER;
 
@@ -105,7 +107,7 @@ namespace minecraft_controller
             field_item(const char* fieldName,const crypt_session* pencrypt)
                 : field(fieldName), encrypt(pencrypt) {}
 
-            rtypes::string field;
+            rtypes::str field;
             const crypt_session* encrypt;
         };
 

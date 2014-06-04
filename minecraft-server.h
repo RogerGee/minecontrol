@@ -133,6 +133,9 @@ namespace minecraft_controller
         // server Java binary
         minecraft_server_start_condition begin(minecraft_server_info&);
 
+        // requests more time for the server (in hours); the server will
+        // display a message to players informing them of the time limit
+        // change
         void extend_time_limit(rtypes::uint32 hoursMore);
 
         // requests that the server shutdown by issuing "stop"

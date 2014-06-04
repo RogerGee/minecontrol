@@ -172,6 +172,11 @@ bool controller_client::message_loop()
             client_log(minecontrold::standardLog) << "read error: client disconnect" << endline;
             return true;
         }
+        if ( !inMessage.good() ) {
+            prepare_error() << "Bad message syntax" << flush;
+            connection << msgbuf.get_message();
+            continue;
+        }
         // process message
         bool executed = false;
         // attempt to process commands that can be executed without login

@@ -2,7 +2,6 @@
 #include "minecontrol-protocol.h"
 #include <cstring>
 #include <rlibrary/rutility.h>
-#include <rlibrary/rstdio.h> //test
 #include <openssl/rsa.h>
 using namespace rtypes;
 using namespace minecraft_controller;
@@ -141,9 +140,9 @@ bool crypt_session::decrypt(const char* source,generic_string& result) const
     }
     return false;
 }
-string crypt_session::get_public_key() const
+str crypt_session::get_public_key() const
 {
-    string result;
+    str result;
     if (_internal != NULL) {
         RSA* rsadata = reinterpret_cast<RSA*>(_internal);
         int lengthN = BN_num_bytes(rsadata->n);
@@ -224,15 +223,24 @@ void minecontrol_message::reset_fields()
     _fieldKeys.clear();
     _fieldValues.clear();
 }
+str minecontrol_message::get_protocol_message() const
+{
+    str r;
+    stringstream ss(r);
+    ss << *this;
+    return r;
+}
 
 rstream& minecraft_controller::operator >>(rstream& stream,minecontrol_message& msg)
 {
     // read message according to minecontrol protocol
-    string line;
+    str line;
     stream.getline(line);
+    rutil_strip_whitespace_ref(line);
     if (line == minecontrol_message::MINECONTROL_PROTO_HEADER) {
         msg._header = line;
         stream.getline(line);
+        rutil_strip_whitespace_ref(line);
         if ( stream.get_input_success() ) {
             msg._command = line;
             // read optional fields and values: each field should be
@@ -244,7 +252,10 @@ rstream& minecraft_controller::operator >>(rstream& stream,minecontrol_message& 
             while (true) {
                 str k, v;
                 stream.getline(line);
-                if (!stream.get_input_success() || line.length()==0)
+                if ( !stream.get_input_success() )
+                    break;
+                rutil_strip_whitespace_ref(line);
+                if (line.length() == 0)
                     break;
                 ss.assign(line);
                 ss >> k;
