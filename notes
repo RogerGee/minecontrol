@@ -86,17 +86,17 @@ above and is available starting in version 0.6 BETA test.
 
       Message Format:
       (request; fields are optional)
-              MINECONTROL-PROTO\n
-              COMMAND\n
-              Field: value\n
-              Field: value\n ...
-              \n
+              MINECONTROL-PROTO <CRLF>
+              COMMAND <CRLF>
+              Field: value <CRLF>
+              Field: value <CRLF> ...
+              <CRLF>
       (response; fields are optional)
-              MINECONTROL-PROTO\n
-              RESPONSE-COMMAND
-              Field: value\n
-              Field: value\n ...
-              \n
+              MINECONTROL-PROTO <CRLF>
+              RESPONSE-COMMAND <CRLF>
+              Field: value <CRLF>
+              Field: value <CRLF> ...
+              <CRLF>
 
 The client initiates a connection to the server sending a request with the HELLO command. The server
 sends a response with the response-command GREETINGS. If this communication fails or times-out, the

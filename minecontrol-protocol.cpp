@@ -230,17 +230,36 @@ str minecontrol_message::get_protocol_message() const
     ss << *this;
     return r;
 }
+/*static*/ void minecontrol_message::_readProtocolLine(rstream& stream,str& line)
+{
+    // read a message line (separated by CRLF)
+    str part;
+    /* rstream objects ignore CR characters (\r) in getline operations; thus we can
+       use getline to retrieve a line separated by LF; if CR is the last character in
+       the line, then the message has been retrieved */
+    line.clear();
+    while (true) {
+        stream.getline(part);
+        if ( !stream.get_input_success() )
+            break;
+        line += part;
+        if (part.length()>0 && part[part.length()-1]=='\r')
+            break;
+    }
+    rutil_strip_whitespace_ref(line);
+    stream.set_input_success(line.length() > 0);
+}
 
 rstream& minecraft_controller::operator >>(rstream& stream,minecontrol_message& msg)
 {
-    // read message according to minecontrol protocol
+    /* 'stream' can point to a number of different rstream derivations, each one performing
+       a different input operation; it is imperative that the input operation not strip out 
+       \r characters */
     str line;
-    stream.getline(line);
-    rutil_strip_whitespace_ref(line);
+    minecontrol_message::_readProtocolLine(stream,line);
     if (line == minecontrol_message::MINECONTROL_PROTO_HEADER) {
         msg._header = line;
-        stream.getline(line);
-        rutil_strip_whitespace_ref(line);
+        minecontrol_message::_readProtocolLine(stream,line);
         if ( stream.get_input_success() ) {
             msg._command = line;
             // read optional fields and values: each field should be
@@ -251,21 +270,26 @@ rstream& minecraft_controller::operator >>(rstream& stream,minecontrol_message& 
             ss.add_extra_delimiter(':');
             while (true) {
                 str k, v;
-                stream.getline(line);
+                minecontrol_message::_readProtocolLine(stream,line);
                 if ( !stream.get_input_success() )
                     break;
-                rutil_strip_whitespace_ref(line);
-                if (line.length() == 0)
-                    break;
+                // line is non-empty: try to parse field key and value
                 ss.assign(line);
+                // try to read in field name (key)
                 ss >> k;
+                if ( !ss.get_input_success() )
+                    continue;
+                // assume the rest of the string is the value
                 ss.getline(v);
                 if ( !ss.get_input_success() )
-                    break;
+                    continue;
+                // strip leading/trailing whitespace from key-value pair
                 rutil_strip_whitespace_ref(k);
                 rutil_strip_whitespace_ref(v);
+                // add to minecontrol_message object payload
                 msg.add_field(k.c_str(),v.c_str());
             }
+            // normalize the command line and all fields to lower case
             rutil_to_lower_ref(msg._command);
             rutil_to_lower_ref(msg._fields);
             // indicate success
@@ -279,8 +303,12 @@ rstream& minecraft_controller::operator >>(rstream& stream,minecontrol_message& 
 
 rstream& minecraft_controller::operator <<(rstream& stream,const minecontrol_message& msg)
 {
+    /* 'stream' might point to a number of different rstream derivations, each one performing
+       a different output operation with the message content; it is impertive that whatever
+       implementation is chosen not strip out "\r" encoded strings */
+    static const char* CRLF = "\r\n";
     str s;
-    stream << msg._header << newline << msg._command << newline;
+    stream << msg._header << CRLF << msg._command << CRLF;
     // ensure iterator is at beginning position
     msg._fieldKeys.set_input_iter(0);
     msg._fieldValues.set_input_iter(0);
@@ -292,13 +320,13 @@ rstream& minecraft_controller::operator <<(rstream& stream,const minecontrol_mes
         msg._fieldValues >> s;
         if ( !msg._fieldValues.get_input_success() )
             break;
-        stream << s << newline;
+        stream << s << CRLF;
     }
     // be nice and reset the iterators
     msg._fieldKeys.set_input_iter(0);
     msg._fieldValues.set_input_iter(0);
     // add final newline and flush stream
-    return stream << endline;
+    return stream << CRLF << flush;
 }
 
 minecontrol_message_buffer::minecontrol_message_buffer()

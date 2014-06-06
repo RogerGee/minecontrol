@@ -69,6 +69,9 @@ int main(int,const char*[])
 
 void daemonize()
 {
+#ifdef MINECONTROL_TEST
+    return; // don't become a daemon for testing
+#endif
     // let's become a daemon
     pid_t pid = ::fork();
     if (pid == -1) {

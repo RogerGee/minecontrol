@@ -2,6 +2,7 @@
 #ifndef SOCKET_H
 #define SOCKET_H
 #include <rlibrary/riodevice.h>
+#include <rlibrary/rstream.h>
 
 namespace minecraft_controller
 {
@@ -69,6 +70,21 @@ namespace minecraft_controller
         virtual void _openSocket(int& fd) = 0;
         virtual void _createClientSocket(socket*& socknew) = 0;
         virtual socket_family _getFamily() const = 0;
+    };
+
+    /* this behaves almost like an rtypes::io_stream except it handles endline
+       encoding in a cross-platform manner (no alterations) */
+    class socket_stream : public rtypes::rstream, public rtypes::generic_stream_device<socket>
+    {
+    private:
+        // rtypes::generic_stream_device interface
+        virtual void _clearDevice() {};
+        virtual bool _openDevice(const char* DeviceID);
+        virtual void _closeDevice();
+
+        // rtypes::rstream interface
+        virtual bool _inDevice() const;
+        virtual void _outDevice();
     };
 }
 

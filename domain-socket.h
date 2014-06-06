@@ -32,37 +32,6 @@ namespace minecraft_controller
         virtual socket_family _getFamily() const
         { return socket_family_unix; }
     };
-
-    class domain_socket_stream_device : public rtypes::stream_device<domain_socket>
-    {
-    protected:
-        domain_socket_stream_device();
-        domain_socket_stream_device(domain_socket&);
-        ~domain_socket_stream_device();
-    private:
-        virtual void _clearDevice();
-        virtual bool _openDevice(const char*);
-        virtual void _closeDevice();
-
-        virtual bool _inDevice() const;
-        virtual void _outDevice();
-    };
-
-    class domain_socket_stream : public rtypes::rstream,
-                                 public domain_socket_stream_device
-    {
-    public:
-        domain_socket_stream();
-        domain_socket_stream(domain_socket& device);
-    };
-
-    class domain_socket_binary_stream : public rtypes::rbinstream,
-                                        public domain_socket_stream_device
-    {
-    public:
-        domain_socket_binary_stream();
-        domain_socket_binary_stream(domain_socket& device);
-    };
 }
 
 #endif

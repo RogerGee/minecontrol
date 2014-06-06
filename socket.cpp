@@ -133,3 +133,33 @@ void socket::_readAll(generic_string& sbuf) const
             sbuf.push_back(buffer[i]);
     }
 }
+
+// minecraft_controller::socket_stream
+
+bool socket_stream::_openDevice(const char* DeviceID)
+{
+    return _device->open(DeviceID);
+}
+void socket_stream::_closeDevice()
+{
+    _device->close();
+}
+bool socket_stream::_inDevice() const
+{
+    if (_device != NULL) {
+        char buffer[4096];
+        _device->read(buffer,4096);
+        if (_device->get_last_operation_status() == success_read) {
+            _bufIn.push_range(buffer,_device->get_last_byte_count());
+            return true;
+        }
+    }
+    return false;
+}
+void socket_stream::_outDevice()
+{
+    if (_device != NULL) {
+        _device->write(&_bufOut.peek(),_bufOut.size());
+        _bufOut.clear();
+    }
+}

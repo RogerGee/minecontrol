@@ -67,6 +67,8 @@ namespace minecraft_controller
     private:
         static const char* const MINECONTROL_PROTO_HEADER;
 
+        static void _readProtocolLine(rtypes::rstream& stream,rtypes::str& line);
+
         bool _state;
         rtypes::str _header;
         rtypes::str _command;

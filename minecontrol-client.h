@@ -61,7 +61,7 @@ namespace minecraft_controller
         inline rtypes::rstream& prepare_list_error();
 
         socket* sock;
-        rtypes::io_stream connection;
+        socket_stream connection;
         minecontrol_message_buffer msgbuf;
         crypt_session crypto;
         pthread_t threadID;

@@ -33,7 +33,7 @@ struct session_state
     socket_address* paddress;
 
     // io enabled streams for connection and terminal
-    io_stream connectStream;
+    socket_stream connectStream;
     stringstream inputStream;
 
     // minecontrol protocol messages
