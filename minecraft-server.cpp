@@ -24,13 +24,13 @@ static const char* const MINECRAFT_USER_DIRECTORY = "minecraft";
 
 // minecraft_controller::minecraft_server_info
 
-minecraft_server_info::minecraft_server_info(bool createNew,const char* serverName,const char* homeDir,int userID,int groupID)
-    : isNew(createNew), internalName(serverName), homeDirectory(homeDir), uid(userID), guid(groupID)
+minecraft_server_info::minecraft_server_info(bool createNew,const char* serverName,const user_info& userInformation)
+    : isNew(createNew), internalName(serverName), userInfo(userInformation)
 {
     // set extended property defaults
     serverTime = uint64(-1);
     // read in server props if server is pre-existing
-    path p(homeDir);
+    path p(userInformation.homeDirectory);
     p += MINECRAFT_USER_DIRECTORY;
     p += serverName;
     if (!isNew && p.exists()) {
@@ -242,7 +242,7 @@ minecraft_server::minecraft_server()
     _maxTime = 0;
     _elapsed = 0;
     _uid = -1;
-    _guid = -1;
+    _gid = -1;
     // reload global settings in case they have changed
     _globals.read_from_file();
 }
@@ -266,31 +266,29 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
 {
     _iochannel.open(); // create new pipe for communication
     pid_t pid = ::fork();
+    path mcraftdir(info.userInfo.homeDirectory);
+    mcraftdir += MINECRAFT_USER_DIRECTORY;
+    mcraftdir += info.internalName;
     if (pid == 0) { // child
         // check server limit before proceeding
         if (_idSet.size()+1 > size_type(_globals.max_servers()))
             _exit((int)mcraft_start_server_too_many_servers);
         // setup the environment for the minecraft server:
         // change process privilages
-        if (::setresgid(info.guid,info.guid,info.guid)==-1 || ::setresuid(info.uid,info.uid,info.uid)==-1)
+        if (::setresgid(info.userInfo.gid,info.userInfo.gid,info.userInfo.gid)==-1 || ::setresuid(info.userInfo.uid,info.userInfo.uid,info.userInfo.uid)==-1)
             _exit((int)mcraft_start_server_permissions_fail);
         // change the process umask
         ::umask(S_IWGRP | S_IWOTH);
         // change working directory to directory for minecraft server
-        path p(info.homeDirectory);
-        p += MINECRAFT_USER_DIRECTORY;
-        if ( !p.exists() && !p.make() )
-            _exit((int)mcraft_start_server_filesystem_error);
-        p += info.internalName;
-        if ( !p.exists() ) {
+        if ( !mcraftdir.exists() ) {
             if (!info.isNew)
                 _exit((int)mcraft_start_server_does_not_exist);
-            if ( !p.make() )
+            if ( !mcraftdir.make() )
                 _exit((int)mcraft_start_server_filesystem_error);
         }
         else if (info.isNew)
             _exit((int)mcraft_start_server_already_exists);
-        if (::chdir( p.get_full_name().c_str() ) != 0)
+        if (::chdir( mcraftdir.get_full_name().c_str() ) != 0)
             _exit((int)mcraft_start_server_filesystem_error);
         // create the server.properties file using the properties in info
         if ( !_create_server_properties_file(info) )
@@ -344,7 +342,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
             return mcraft_start_failure_unknown;
         }
         // initialize the authority which will manage the minecraft server
-        _authority = new minecontrol_authority(_iochannel);
+        _authority = new minecontrol_authority(_iochannel,mcraftdir.get_full_name(),info.userInfo);
         // close the input side for our copy of the io channel; the authority
         // will maintain the read end of the pipe
         _iochannel.close_input();
@@ -357,8 +355,8 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         _idSet.insert(_internalID);
         _idSetProtect.unlock();
         _processID = pid;
-        _uid = info.uid;
-        _guid = info.guid;
+        _uid = info.userInfo.uid;
+        _gid = info.userInfo.gid;
         _maxTime = _globals.server_time();
         _elapsed = 0;
         _threadCondition = true;
@@ -455,7 +453,7 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
         _maxTime = 0;
         _elapsed = 0;
         _uid = -1;
-        _guid = -1;
+        _gid = -1;
     }
     return status;
 }
@@ -648,13 +646,13 @@ server_handle::server_handle()
         handles[i]->_issued = false;
     _mutex.unlock();
 }
-/*static*/ minecraft_server_manager::auth_lookup_result minecraft_server_manager::lookup_auth_servers(int uid,int guid,dynamic_array<server_handle*>& outList)
+/*static*/ minecraft_server_manager::auth_lookup_result minecraft_server_manager::lookup_auth_servers(const user_info& login,dynamic_array<server_handle*>& outList)
 {
     auth_lookup_result result = auth_lookup_none;
     _mutex.lock();
     for (size_type i = 0;i<_handles.size();i++) {
         if (_handles[i]->pserver != NULL) {
-            if (_handles[i]->pserver->_uid==uid || _handles[i]->pserver->_guid==guid || uid==0/*is root*/ || guid==0) {
+            if (_handles[i]->pserver->_uid==login.uid || _handles[i]->pserver->_gid==login.gid || login.uid==0/*is root*/ || login.gid==0) {
                 _handles[i]->_issued = true;
                 outList.push_back(_handles[i]);
                 result = auth_lookup_found;
@@ -666,7 +664,7 @@ server_handle::server_handle()
     _mutex.unlock();
     return result;
 }
-/*static*/ void minecraft_server_manager::print_servers(rstream& stream,int uid,int guid)
+/*static*/ void minecraft_server_manager::print_servers(rstream& stream,const user_info* login)
 {
     bool noneFound = true;
     _mutex.lock();
@@ -706,7 +704,7 @@ server_handle::server_handle()
         }
     }
     // print out information for an authenticated user
-    if (uid>-1 || guid>-1) {
+    if (login != NULL) {
     }
     if (noneFound)
         stream << "No active servers running at this time\n";

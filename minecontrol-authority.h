@@ -1,7 +1,10 @@
 // minecontrol-authority.h
 #ifndef MINECONTROL_AUTHORITY_H
 #define MINECONTROL_AUTHORITY_H
+#include "minecontrol-misc-types.h"
 #include "pipe.h"
+#include "socket.h"
+#include "mutex.h"
 #include <rlibrary/rdynarray.h>
 
 namespace minecraft_controller
@@ -105,34 +108,52 @@ namespace minecraft_controller
     class minecontrol_authority
     {
     public:
-        minecontrol_authority(const pipe& ioChannel);
+        enum console_result
+        {
+            console_communication_finished, // the client successfully negotiated with the authority control and closed the console mode
+            console_communication_terminated, // the client successfully negotiated with the authority control but was shutdown by the authority
+            console_no_channel, // the authority was not ready to enter console mode
+            console_channel_busy
+        };
+        enum execute_result
+        {
+            authority_exec_okay, // the executable program was successfully executed
+            authority_exec_cannot_run, // the process couldn't fork or exec failed in some way other than not finding the program
+            authority_exec_access_denied, // the user didn't have execute permission for the executable program
+            authority_exec_not_program, // the specified file wasn't in an executable format
+            authority_exec_program_not_found, // the executable program was not found in the proper directories
+            authority_exec_too_many_arguments, // too many arguments supplied to program
+            authority_exec_too_many_running, // too many executable programs are already running under the authority
+            authority_exec_not_ready // the authority object is not ready to run executable programs at this time (most likely the Minecraft server shutdown)
+        };
+
+        minecontrol_authority(const pipe& ioChannel,const rtypes::str& serverDirectory,const user_info& login);
         ~minecontrol_authority();
 
-        void begin_processing();
-        void end_processing();
+        console_result client_console_operation(socket& clientChannel); // blocks
+        void issue_command(const rtypes::str& commandLine);
+        execute_result run_executable(rtypes::str commandLine);
 
-        // client login functions:
-        void login(const rtypes::io_device& clientChannel); // begin asyncronous coms with client under authority management; this function blocks until logout
-        void force_logout(); // force the client out of the authority management protocol
-
-        bool is_client_logged_in() const // determines if authority is under client management
-        { return _clientchannel != NULL; }
-        bool is_authority_managed() const; // determine if authority is under client or script management
         bool is_responsive() const; // determine if server process is still responsive
     private:
-        static const rtypes::uint16 _idleTimeout; // (in seconds)
-        static void* _processing(void*); // thread handler for message processing/message output to logged-in client
-        static void* _clientinput(void*); // thread handler for client input; started upon client login
+        static const char* const AUTHORITY_EXE_PATH;
+        static const int ALLOWED_CHILDREN = 10;
+        static void* processing(void*); // thread handler for message processing/message output to logged-in client or child processes
+        static void* child_processing(void*); // thread handler for managing running child processes
 
-        /* the usage of these IO devices assumes atomic operation on normal read/write
-           operations; thus they are used in multiple thread contexts without mutexes */
         pipe _iochannel; // IO channel to Minecraft server Java process (read/write enabled)
-        pipe _childStdIn; // standard input channel to child authority process; optionally used
-        rtypes::io_device* _clientchannel; // IO channel to logged-in client; data sent written/read must follow the MINECONTROL-PROTOCOL; NULL if no logged in client
+        rtypes::str _serverDirectory; // directory of server files that the authority manages; becomes the current working directory for the child authority process
+        user_info _login; // login information for user running minecraft server
+        socket* _clientchannel; // socket used for client communications using minecontrol protocol; NULL if client is not registered
+        pipe _childStdIn[ALLOWED_CHILDREN]; // write-only pipe (in parent) to child stdin
+        rtypes::int32 _childID[ALLOWED_CHILDREN]; // parallel array of child process ids
+        int _childCnt; // maintain a count of child processes (for convenience)
+        mutex _childMtx, _clientMtx; // control cross-thread access
+        mutable rtypes::ulong _threadID; // processing threadID
+        volatile bool _threadCondition;
+        volatile bool _consoleEnabled;
 
-        volatile bool _threadCond; // condition variable for _processing thread
-        rtypes::ulong _threadID; // threadID for _processing thread
-        rtypes::int32 _processID; // processID for child authority process; optionally used
+        static bool _prepareArgs(char* commandLine,const char** outProgram,const char** outArgv,int size);
     };
 }
 

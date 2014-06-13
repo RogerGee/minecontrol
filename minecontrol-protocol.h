@@ -3,6 +3,7 @@
 #define MINECONTROL_PROTOCOL_H
 #include <rlibrary/rqueue.h>
 #include <rlibrary/rstringstream.h> // gets rstream
+#include "socket.h"
 
 namespace minecraft_controller
 {
@@ -64,6 +65,9 @@ namespace minecraft_controller
         { return _fieldValues; }
 
         rtypes::str get_protocol_message() const;
+
+        void read_protocol_message(socket& input);
+        void write_protocol_message(socket& output);
     private:
         static const char* const MINECONTROL_PROTO_HEADER;
 

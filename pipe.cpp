@@ -1,5 +1,6 @@
 #include "pipe.h"
 #include <unistd.h>
+#include <limits.h>
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -7,6 +8,12 @@ pipe::pipe()
 {
     _fdOpenRead = -1;
     _fdOpenWrite = -1;
+}
+minecraft_controller::pipe& pipe::operator =(const pipe& obj)
+{
+    if (this != &obj)
+        _assign(obj);
+    return *this;
 }
 void pipe::standard_duplicate(bool includeError)
 {
@@ -48,6 +55,10 @@ void pipe::close_open()
         ::close(_fdOpenRead);
         _fdOpenRead = -1;
     }
+}
+/*static*/ size_type pipe::pipe_atomic_limit()
+{
+    return PIPE_BUF;
 }
 void pipe::_openEvent(const char*,io_access_flag access,io_resource** pinput,io_resource** poutput,void**,uint32)
 {

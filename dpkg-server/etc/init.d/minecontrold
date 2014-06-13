@@ -31,6 +31,7 @@ case "$1" in
 	;;
     restart)
 	stop_minecontrold
+        sleep 2
 	start_minecontrold
 	;;
 esac

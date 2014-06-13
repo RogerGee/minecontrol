@@ -6,9 +6,11 @@
 #include <rlibrary/rstringstream.h>
 #include <rlibrary/rutility.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <signal.h>
 #include <fcntl.h>
 #include <termios.h>
+#include <ncurses.h>
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -17,6 +19,8 @@ static const char* const DOMAIN_NAME = "@minecontrol";
 static const char* const SERVICE_PORT = "44446";
 static const char* PROGRAM_NAME;
 static const char* const PROGRAM_VERSION = "0.8 (BETA)";
+static const char PROMPT_MAIN = '#';
+static const char PROMPT_CONSOLE = '$';
 
 // session_state structure: stores connection information
 struct session_state
@@ -76,6 +80,7 @@ static void login(session_state& session); // these commands provide an interact
 static void logout(session_state& session);
 static void start(session_state& session);
 static void extend(session_state& session);
+static void console(session_state& session);
 static void stop(session_state& session);
 static void any_command(const generic_string& command,session_state& session); // these commands do not provide an interactive mode
 
@@ -124,7 +129,7 @@ int main(int argc,const char* argv[])
 
         if (session.username.length() > 0)
             stdConsole << session.username << '@';
-        stdConsole << session.serverName << '-' << session.serverVersion << "# ";
+        stdConsole << session.serverName << '-' << session.serverVersion << PROMPT_MAIN << ' ';
         session.inputStream.close(); // close any last session
         stdConsole.getline( session.inputStream.get_device() );
 
@@ -138,6 +143,8 @@ int main(int argc,const char* argv[])
             start(session);
         else if (command == "extend")
             extend(session);
+        else if (command == "console")
+            console(session);
         else if (command == "stop")
             stop(session);
         else if (command == "quit")
@@ -403,6 +410,21 @@ void extend(session_state& session)
     session.request.enqueue_field_name("Amount");
     session.request << tokA << newline << tokB << flush;
     request_response_sequence(session);
+}
+
+static void* console_output_thread(void*)
+{ // handle output for the thread
+
+    return NULL;
+}
+void console(session_state& session)
+{
+    pthread_t tid;
+    session.request.begin("CONSOLE");
+    session.connectStream << session.request.get_message();
+    pthread_create(&tid,NULL,&console_output_thread,&session);
+
+    pthread_join(tid,NULL);
 }
 
 void stop(session_state& session)

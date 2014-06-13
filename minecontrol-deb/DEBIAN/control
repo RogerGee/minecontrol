@@ -1,5 +1,0 @@
-Package: minecontrol
-Version: 0.6
-Maintainer: Roger Gee <rpg11a@acu.edu>
-Description: A simple daemon and client for authorizing and managing Minecraft servers.
-Architecture: i386

@@ -125,7 +125,14 @@ sent. The client simply needs to shutdown the socket connection to cleanly disco
          Amount: [integer number (hours to extend)]
         STOP
          ServerID: [integer number]
-        CONSOLE
+        CONSOLE             (begin console communications; client should begin a new thread that reads messages and writes to output screen;
+                                   the server responds to this command with a CONSOLE-MESSAGE reponse with Status=established; no other console
+                                   commands are directly acknowledged once in console mode)
+        CONSOLE-COMMAND     (send a Minecraft server command string to minecontrold; minecontrold will forward this message to Java)
+         ServerCommand: [string]
+         ServerCommand: [string]
+         ...
+        CONSOLE-QUIT        (end console communications; server will send a CONSOLE-MESSAGE with Status=shutdown)
         SHUTDOWN
 
       Responses:
@@ -143,6 +150,14 @@ sent. The client simply needs to shutdown the socket connection to cleanly disco
          (etc)
         ERROR
          Payload: [message]
+        CONSOLE-MESSAGE
+         Status: [established|failed|message|error|shutdown]
+                 established: the client's CONSOLE command is being acknowledged; the minecontrol authority has accepted the client into console mode (no payload)
+                 failed: the client's CONSOLE command was rejected (no payload)
+                 message: the payload field contains a a Minecraft server command string
+                 error: error occurred (client most likely sent bad command during console mode); payload contains error message
+                 shutdown: the server is shutting down the console mode (no payload); this is a response to a CONSOLE-QUIT or an internal shutdown
+         Payload: [string]
 
 RSA Cryptography
     Minecontrol employs the OpenSSL Crypto library to provide encryption for sensitive

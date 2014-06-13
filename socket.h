@@ -46,6 +46,8 @@ namespace minecraft_controller
     public:
         socket();
 
+        socket& operator =(const socket&);
+
         bool bind(const socket_address& address); // server
         socket_accept_condition accept(socket*& socknew); // server
         bool connect(const socket_address& address); // client

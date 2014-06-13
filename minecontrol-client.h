@@ -3,6 +3,7 @@
 #define MINECONTROL_CLIENT_H
 #include <rlibrary/rdynarray.h>
 #include "minecontrol-protocol.h"
+#include "minecontrol-misc-types.h"
 #include "socket.h" // gets io_device
 #include "mutex.h" // gets pthread
 
@@ -66,8 +67,7 @@ namespace minecraft_controller
         crypt_session crypto;
         pthread_t threadID;
         volatile bool threadCondition;
-        int uid, guid;
-        rtypes::str homedir;
+        user_info userInfo;
         rtypes::size_type referenceIndex;
     };
 }

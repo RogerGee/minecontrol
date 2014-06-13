@@ -12,6 +12,8 @@ namespace minecraft_controller
     public:
         pipe();
 
+        pipe& operator =(const pipe&);
+
         // close and duplicate this pipe as the standard
         // IO channel for the current process; optionally
         // include standard error                   [child]
@@ -21,6 +23,8 @@ namespace minecraft_controller
         // be invoked in a parent process that spawns a child that
         // invokes 'standard_duplicate'             [parent]
         void close_open();
+
+        static rtypes::size_type pipe_atomic_limit();
     private:
         // implement io_device interface
         virtual void _openEvent(const char*,rtypes::io_access_flag,rtypes::io_resource**,rtypes::io_resource**,void**,rtypes::uint32);

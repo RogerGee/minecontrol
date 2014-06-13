@@ -230,6 +230,18 @@ str minecontrol_message::get_protocol_message() const
     ss << *this;
     return r;
 }
+void minecontrol_message::read_protocol_message(socket& input)
+{
+    socket_stream ss;
+    ss.assign(input);
+    ss >> *this;
+}
+void minecontrol_message::write_protocol_message(socket& output)
+{
+    socket_stream ss;
+    ss.assign(output);
+    ss << *this;
+}
 /*static*/ void minecontrol_message::_readProtocolLine(rstream& stream,str& line)
 {
     // read a message line (separated by CRLF)

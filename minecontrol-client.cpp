@@ -2,7 +2,7 @@
 #define _XOPEN_SOURCE // get 'crypt'
 #include "minecontrol-client.h"
 #include "minecraft-controller.h"
-#include "minecraft-server.h"
+#include "minecraft-server.h" // gets minecontrol-authority.h
 #include <unistd.h>
 #include <pwd.h>
 #include <shadow.h>
@@ -107,8 +107,6 @@ controller_client::controller_client(socket* acceptedSocket)
     sock = acceptedSocket;
     threadID = -1;
     threadCondition = true;
-    uid = -1; // means "not logged in"
-    guid = -1;
     referenceIndex = 0;
 }
 controller_client::~controller_client()
@@ -191,7 +189,7 @@ bool controller_client::message_loop()
             // attempt to process commands that can only be executed with login status
             for (size_type i = 0;i<CMD_COUNT_WITH_LOGIN;i++) {
                 if ( inMessage.is_command(CMDNAME_WITH_LOGIN[i]) ) {
-                    if (uid < 0) {
+                    if (userInfo.uid < 0) {
                         prepare_error() << "Permission denied: '" << inMessage.get_command() << "' command requires authentication" << flush;
                         connection << msgbuf.get_message();
                     }
@@ -205,7 +203,7 @@ bool controller_client::message_loop()
                 // attempt to process commands that can only be executed with privaleged login (root) status
                 for (size_type i = 0;i<CMD_COUNT_WITH_PRIVALEGED_LOGIN;i++) {
                     if ( inMessage.is_command(CMDNAME_WITH_PRIVALEGED_LOGIN[i]) ) {
-                        if (uid != 0) {
+                        if (userInfo.uid != 0) {
                             prepare_error() << "Permission denied: '" << inMessage.get_command() << "' command requires privaleged (root) authentication" << flush;
                             connection << msgbuf.get_message();
                         }
@@ -226,7 +224,7 @@ bool controller_client::message_loop()
 }
 bool controller_client::command_login(rstream& kstream,rstream& vstream) // handles 'login' requests
 {
-    if (uid != -1) {
+    if (userInfo.uid >= 0) {
         prepare_error() << "Log in status is already confirmed; please log out to log in again" << flush;
         connection << msgbuf.get_message();
         return false;
@@ -289,9 +287,9 @@ bool controller_client::command_login(rstream& kstream,rstream& vstream) // hand
         client_log(minecontrold::standardLog) << "authentication failure: bad password for user '" << username << '\'' << endline;
         return false;
     }
-    uid = pwd->pw_uid;
-    guid = pwd->pw_gid;
-    homedir = pwd->pw_dir;
+    userInfo.uid = pwd->pw_uid;
+    userInfo.gid = pwd->pw_gid;
+    userInfo.homeDirectory = pwd->pw_dir;
     prepare_message() << "Authentication complete: logged in as '" << username << '\'' << flush;
     connection << msgbuf.get_message();
     client_log(minecontrold::standardLog) << "client authenticated successfully as '" << username << '\'' << endline;
@@ -299,9 +297,9 @@ bool controller_client::command_login(rstream& kstream,rstream& vstream) // hand
 }
 bool controller_client::command_logout(rstream&,rstream&)
 {
-    uid = -1;
-    guid = -1;
-    homedir.clear();
+    userInfo.uid = -1;
+    userInfo.gid = -1;
+    userInfo.homeDirectory.clear();
     prepare_message() << "Successful logout" << flush;
     connection << msgbuf.get_message();
     client_log(minecontrold::standardLog) << "client was logged-out of authentication mode" << endline;
@@ -332,7 +330,7 @@ bool controller_client::command_start(rstream& kstream,rstream& vstream)
         connection << msgbuf.get_message();
         return false;
     }
-    minecraft_server_info info(isNew,serverName.c_str(),homedir.c_str(),uid,guid);
+    minecraft_server_info info(isNew,serverName.c_str(),userInfo);
     info.read_props(props,errors); // read and parse options
     // attempt to start the minecraft server
     server_handle* handle;
@@ -351,7 +349,7 @@ bool controller_client::command_start(rstream& kstream,rstream& vstream)
 bool controller_client::command_status(rstream&,rstream&)
 {
     rstream& msg = prepare_list_message();
-    minecraft_server_manager::print_servers(msg,uid,guid);
+    minecraft_server_manager::print_servers(msg,userInfo.uid>-1 ? &userInfo : NULL);
     msg.flush_output();
     connection << msgbuf.get_message();
     return true;
@@ -394,7 +392,7 @@ bool controller_client::command_extend(rstream& kstream,rstream& vstream)
         return false;
     }
     // ask the server manager for handles to running servers that the user can access; we need to make sure no blocking calls happen here (shouldn't be a problem)
-    if ((result = minecraft_server_manager::lookup_auth_servers(uid,guid,servers)) == minecraft_server_manager::auth_lookup_none) {
+    if ((result = minecraft_server_manager::lookup_auth_servers(userInfo,servers)) == minecraft_server_manager::auth_lookup_none) {
         prepare_error() << "There are no active servers running to stop" << flush;
         connection << msgbuf.get_message();
         return false;
@@ -445,7 +443,7 @@ bool controller_client::command_stop(rstream& kstream,rstream& vstream)
         return false;
     }
     // ask the server manager for handles to running servers that the user can access; we need to make sure no blocking calls happen here (shouldn't be a problem)
-    if ((result = minecraft_server_manager::lookup_auth_servers(uid,guid,servers)) == minecraft_server_manager::auth_lookup_none) {
+    if ((result = minecraft_server_manager::lookup_auth_servers(userInfo,servers)) == minecraft_server_manager::auth_lookup_none) {
         prepare_error() << "There are no active servers running to stop" << flush;
         connection << msgbuf.get_message();
         return false;
@@ -492,7 +490,7 @@ bool controller_client::command_console(rstream& kstream,rstream& vstream)
         return false;
     }
     // ask the server manager for handles to running servers that the user can access; we need to make sure no blocking calls happen here (shouldn't be a problem)
-    if ((result = minecraft_server_manager::lookup_auth_servers(uid,guid,servers)) == minecraft_server_manager::auth_lookup_none) {
+    if ((result = minecraft_server_manager::lookup_auth_servers(userInfo,servers)) == minecraft_server_manager::auth_lookup_none) {
         prepare_message() << "There are no active servers running to stop" << flush;
         connection << msgbuf.get_message();
         return false;
@@ -513,8 +511,17 @@ bool controller_client::command_console(rstream& kstream,rstream& vstream)
         connection << msgbuf.get_message();
         return false;
     }
-
-    return true;
+    minecontrol_authority* pauth;
+    minecontrol_authority::console_result res;
+    client_log(minecontrold::standardLog) << "client entered console mode on server '" << servers[i]->pserver->get_internal_name()
+                                          << "' with id=" << servers[i]->pserver->get_internal_id() << endline;
+    pauth = servers[i]->pserver->get_authority();
+    res = pauth->client_console_operation(*sock);
+    client_log(minecontrold::standardLog) << "client exited console mode on server '" << servers[i]->pserver->get_internal_name()
+                                          << "' with id=" << servers[i]->pserver->get_internal_id() << endline;
+    // return regulation of server(s) to the manager
+    minecraft_server_manager::attach_server(&servers[0],servers.size());
+    return res != minecontrol_authority::console_no_channel;
 }
 bool controller_client::command_shutdown(rstream&,rstream&)
 {

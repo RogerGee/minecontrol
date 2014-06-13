@@ -27,6 +27,12 @@ socket::socket()
     : _id(0)
 {
 }
+minecraft_controller::socket& socket::operator =(const socket& obj)
+{
+    if (this != &obj)
+        _assign(obj);
+    return *this;
+}
 bool socket::bind(const socket_address& address)
 {
     io_resource* pres = _getValidContext();

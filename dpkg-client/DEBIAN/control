@@ -1,0 +1,5 @@
+Package: minecontrol
+Version: 0.8
+Maintainer: Roger Gee <rpg11a@acu.edu>
+Description: A local/remote minecontrol client program
+Architecture: i386

@@ -3,10 +3,11 @@
 #define MINECRAFT_SERVER_H
 #include "minecraft-server-properties.h" // gets rstringstream
 #include "minecontrol-authority.h"
-#include <rlibrary/rdynarray.h>
-#include <rlibrary/rset.h>
+#include "minecontrol-misc-types.h"
 #include "pipe.h"
 #include "mutex.h"
+#include <rlibrary/rdynarray.h>
+#include <rlibrary/rset.h>
 
 namespace minecraft_controller
 {
@@ -14,15 +15,14 @@ namespace minecraft_controller
 
     struct minecraft_server_info
     {
-        minecraft_server_info(bool createNew,const char* serverName,const char* homeDir,int userID,int groupID);
+        minecraft_server_info(bool createNew,const char* serverName,const user_info& userInformation);
 
         /* attributes for server startup: these determine the context in which a minecraft
            server runs or is created */
         bool isNew; // request (if possible) that a new server be made with the specified name
         rtypes::str internalName; // corresponds to the directory that contains the Minecraft server files
-        rtypes::str homeDirectory; // home directory of user currently logged in
-        int uid, guid; // associated user and group id of currently logged-in user
-
+        user_info userInfo; // information for user that is running the server
+        
         /* extended properties: these properties extend those found in server.properties, often
            implementing a feature provided by this network server program; some properties may
            override default settings for a 'minecraft_server' read from the minecontrol.init file */
@@ -138,6 +138,12 @@ namespace minecraft_controller
         // change
         void extend_time_limit(rtypes::uint32 hoursMore);
 
+        // get a reference to the server's authority object
+        minecontrol_authority* get_authority()
+        { return _authority; }
+        const minecontrol_authority* get_authority() const
+        { return _authority; }
+
         // requests that the server shutdown by issuing "stop"
         // to the server's standard input; "end" should be called
         // on every server after a begin; "end" will be called by the
@@ -177,7 +183,7 @@ namespace minecraft_controller
         minecraft_server_exit_condition _threadExit; // (this just serves as a memory location that outlives _io_thread)
         rtypes::uint64 _maxTime;
         rtypes::uint64 _elapsed;
-        int _uid, _guid;
+        int _uid, _gid;
 
         // helpers
         bool _create_server_properties_file(minecraft_server_info&);
@@ -233,12 +239,11 @@ namespace minecraft_controller
         // looks up all current servers that are still running
         // that can be accessed based on an authenticated user;
         // the server handles are checked out (detached from the system)
-        static auth_lookup_result lookup_auth_servers(int uid,int guid,rtypes::dynamic_array<server_handle*>& outList);
+        static auth_lookup_result lookup_auth_servers(const user_info& login,rtypes::dynamic_array<server_handle*>& outList);
 
-        // prints out server all information on the specified rstream; if uid is not -1, then
-        // additional information that is accessible to an authenticated user might be included;
-        // this mostly includes cached information, which is released after insertion
-        static void print_servers(rtypes::rstream&,int uid = -1,int guid = -1);
+        // prints out server all information on the specified rstream; if login != NULL then
+        // additional information that is accessible to an authenticated user might be included
+        static void print_servers(rtypes::rstream&,const user_info* login = NULL);
 
         // starts up the server manager system
         static void startup_server_manager();
