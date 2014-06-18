@@ -6,6 +6,7 @@
 #include "net-socket.h"
 #include <rlibrary/rstdio.h>
 #include <rlibrary/rstringstream.h>
+#include <rlibrary/rutility.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <signal.h>
@@ -32,6 +33,8 @@ static network_socket remote;
 class minecraft_controller_error { };
 
 // functions
+static void process_short_option(const char* option);
+static void process_long_option(const char* option);
 static void daemonize(); // turns this process into a daemon
 static void shutdown_handler(int); // recieves signals from system for server shutdown
 static void sigpipe_handler(int); // recieves signals from system in the event that output fails on a network connection
@@ -40,8 +43,18 @@ static void local_operation(); // accepts local connections; manages the thread 
 static void* remote_operation(void*); // started on a new thread by local_operation; accepts remote connections
 static void fatal_error(const char* message); // exits the calling process after showing error message on STDERR
 
-int main(int,const char*[])
+int main(int argc,const char* argv[])
 {
+    if (argc > 1) {
+        for (int i = 1;i < argc;++i) {
+            if (argv[i][0] == '-') {
+                if (argv[i][1] == '-')
+                    process_long_option(argv[i]+2);
+                else
+                    process_short_option(argv[i]+1);
+            }
+        }
+    }
     // set up signal handler for TERM and INT events
     if (::signal(SIGTERM,&shutdown_handler) == SIG_ERR)
         fatal_error("cannot create signal handler for SIGTERM");
@@ -65,6 +78,19 @@ int main(int,const char*[])
     // log process completion
     minecontrold::standardLog << "process complete" << endline;
     return 0;
+}
+
+void process_short_option(const char*)
+{
+}
+
+void process_long_option(const char* option)
+{
+    if ( rutil_strcmp(option,"version") )
+        stdConsole << minecontrold::get_server_name() << ' ' << minecontrold::get_server_version() << newline << newline 
+                   << "Report bugs (kindly!) to Roger Gee <rpg11a@acu.edu>.\n";
+    else if ( rutil_strcmp(option,"help") )
+        stdConsole << "";
 }
 
 void daemonize()

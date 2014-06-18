@@ -90,7 +90,7 @@ bool socket::connect(const socket_address& address)
 {
     io_resource* pres = _getValidContext();
     // attempt connect on all available interfaces
-    while (true) {
+    while (pres != NULL) {
         size_type sz;
         const sockaddr* addr;
         bool cont = address.get_next_address(reinterpret_cast<const void*&>(addr),sz);

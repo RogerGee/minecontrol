@@ -35,13 +35,13 @@ namespace minecraft_controller
         typedef bool (controller_client::* command_call)(rtypes::rstream&,rtypes::rstream&);
         static rtypes::size_type CMD_COUNT_WITHOUT_LOGIN;
         static rtypes::size_type CMD_COUNT_WITH_LOGIN;
-        static rtypes::size_type CMD_COUNT_WITH_PRIVALEGED_LOGIN;
+        static rtypes::size_type CMD_COUNT_WITH_PRIVILEGED_LOGIN;
         static char const *const CMDNAME_WITHOUT_LOGIN[];
         static command_call const CMDFUNC_WITHOUT_LOGIN[];
         static char const *const CMDNAME_WITH_LOGIN[];
         static command_call const CMDFUNC_WITH_LOGIN[];
-        static char const *const CMDNAME_WITH_PRIVALEGED_LOGIN[]; // root commands
-        static command_call const CMDFUNC_WITH_PRIVALEGED_LOGIN[];
+        static char const *const CMDNAME_WITH_PRIVILEGED_LOGIN[]; // root commands
+        static command_call const CMDFUNC_WITH_PRIVILEGED_LOGIN[];
 
         // message handlers
         bool message_loop();
@@ -50,6 +50,7 @@ namespace minecraft_controller
         bool command_start(rtypes::rstream&,rtypes::rstream&);
         bool command_status(rtypes::rstream&,rtypes::rstream&);
         bool command_extend(rtypes::rstream&,rtypes::rstream&);
+        bool command_exec(rtypes::rstream&,rtypes::rstream&);
         bool command_stop(rtypes::rstream&,rtypes::rstream&);
         bool command_console(rtypes::rstream&,rtypes::rstream&);
         bool command_shutdown(rtypes::rstream&,rtypes::rstream&);

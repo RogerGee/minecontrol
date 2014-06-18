@@ -1,16 +1,54 @@
-exec=/usr/bin/java
-cmd-line=-Xmx1024M -Xms1024M -jar /usr/jar/minecraft_server.jar nogui
+# minecontrol.init - global, per server init file
+#  This file is read by minecontrol everytime a new server is executed.
+# Some of these properties apply to how the Minecraft server process is
+# executed each time the user starts it up. Others are only used when 
+# the server is created for the first time.
+#  This file is not necessary for minecontrol to function; minecontrol
+# will revert to internal defaults if properties are left unspecified.
+# Also, minecontrol will not create this file. This commented version
+# was supplied with the minecontrol Debian software package.
+#  Minecontrol author: Roger P. Gee <rpg11a@acu.edu>
 
-! Server time is specified in hours
-!server-time=4
+# Path to Java executable (default is /usr/bin/java)
+#exec=/usr/bin/java
 
-! Max servers restricts number of running minecraft server processes
-!max-servers=1
+# Command line for Java Minecraft server; this does not include the
+# typical executable name as the first argument (minecontrol provides
+# this internally using the "exec" property). The default value is
+# seen below.
+#cmd-line=-Xmx1024M -Xms1024M -jar minecraft_server.jar nogui
+cmd-line=-Xmx1024M -Xms1024M -jar /mnt/tmpdisk/minecraft_server.1.7.9.jar nogui
 
-! You can specify default properties; these are only applied when
-! the user doesn't explicitly provide them.
-!default-server-port=44444
+# Server time for each server process (default is 4 hours)
+#server-time=4
 
-! You can also specify override properties; these are always applied,
-! even when the user specifies them.
-!override-server-port=44445
+# Max servers restricts number of running minecraft server processes
+# (default is virtually unrestricted at 65535)
+#max-servers=1
+
+# Alternate home specifies another directory root for users. By default,
+# minecontrol uses the normal home directory that the system provides
+# for an authenticated user (the one specified in the system password
+# file). If alt-home is specified, Minecraft servers are creating in
+# directories that are sub-directories of alt-home/user-name/minecraft/
+# as opposed to user-home-dir/minecraft/.
+#alt-home=/minecraft-data
+alt-home=/mnt/tmpdisk/
+
+# You can specify default properties for the server.properties file;
+# these are only applied if the user is creating a new server and
+# if the property had not previously been specified by the user when
+# creating the server in minecontrol. Use the format:
+#  default-[PROPERTY-NAME]=[VALUE] (see example with server-port 
+# property below)
+#default-server-port=40100
+
+# You can also specify override properties; these are applied only if
+# the user is creating a new server. If the user specifies this property
+# when creating the server it takes no effect and is overrided by the 
+# property specified here. This is somewhat effective at letting the 
+# administrator choose initial properties for a server without the user
+# having to know the details about the system (like port numbers, world-size
+# restrictions, ETC.). Use the format:
+#  override-[PROPERTY-NAME]=[VALUE]
+#override-server-port=40101

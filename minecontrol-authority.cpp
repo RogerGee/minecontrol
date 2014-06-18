@@ -1,6 +1,7 @@
 // minecontrol-authority.cpp
 #include "minecontrol-authority.h"
 #include "minecontrol-protocol.h"
+#include <rlibrary/rfile.h>
 #include <rlibrary/rstringstream.h>
 #include <rlibrary/rutility.h>
 #include <cstdio>
@@ -206,6 +207,7 @@ str minecraft_server_message::get_gist_string() const
 }
 
 const char* const minecontrol_authority::AUTHORITY_EXE_PATH = "/usr/lib/minecontrol:/usr/local/lib/minecontrol"; // standard authority script location
+const char* const minecontrol_authority::AUTHORITY_EXEC_FILE = "minecontrol.exec";
 minecontrol_authority::minecontrol_authority(const pipe& ioChannel,const str& serverDirectory,const user_info& userInfo)
     : _iochannel(ioChannel), _serverDirectory(serverDirectory), _login(userInfo)
 {
@@ -214,7 +216,25 @@ minecontrol_authority::minecontrol_authority(const pipe& ioChannel,const str& se
         _childID[i] = -1;
     _threadID = -1;
     _consoleEnabled = true;
-    _threadCondition = false;
+    _threadCondition = true;
+    // start default scripts from _serverDirectory/AUTHORITY_EXEC_FILE
+    file execFile;
+    str execFileName = _serverDirectory;
+    execFileName.push_back('/');
+    execFileName += AUTHORITY_EXEC_FILE;
+    if ( execFile.open_input(execFileName.c_str(),file_open_existing) ) {
+        str line;
+        file_stream fstream(execFile);
+        while ( fstream.has_input() ) {
+            fstream.getline(line);
+            rutil_strip_whitespace_ref(line);
+            // check for comments
+            if (line[0] == '#')
+                continue;
+            // assume 'line' is a command line
+            run_executable(line);
+        }
+    }
     // start processing thread; this thread is joinable and will be joined with at destruction-time
     if (pthread_create(&_threadID,NULL,&minecontrol_authority::processing,this) != 0)
         throw minecontrol_authority_error();
@@ -222,54 +242,59 @@ minecontrol_authority::minecontrol_authority(const pipe& ioChannel,const str& se
 minecontrol_authority::~minecontrol_authority()
 {
     // join back up with the processing thread
+    _threadCondition = false;
     if (int(_threadID)!=-1 && pthread_join(_threadID,NULL) != 0)
-            throw minecontrol_authority_error();
+        throw minecontrol_authority_error();
 }
 minecontrol_authority::console_result minecontrol_authority::client_console_operation(socket& clientChannel)
 {
-    if (_iochannel.is_valid_context() || !_consoleEnabled) {
+    if (_iochannel.is_valid_context() && _consoleEnabled) {
         _clientMtx.lock();
         // register the client
         _clientchannel = &clientChannel;
         // handle input from client using the minecontrol protocol; another thread will send messages;
         // we do not respond directly to these messages; the communication to the client is asynchronous
-        minecontrol_message msg;
+        minecontrol_message to, from;
         // send established status to client
-        msg.assign_command("CONSOLE-MESSAGE");
-        msg.add_field("Status","established");
-        msg.write_protocol_message(clientChannel);
+        to.assign_command("CONSOLE-MESSAGE");
+        to.add_field("Status","established");
+        to.write_protocol_message(clientChannel);
+        to.reset_fields();
         _clientMtx.unlock();
         while (_consoleEnabled) {
-            msg.read_protocol_message(clientChannel);
-            if (!msg.good() || msg.is_command("console-quit"))
+            from.read_protocol_message(clientChannel);
+            if (!_consoleEnabled || !from.good() || from.is_command("console-quit"))
                 break;
-            if ( !msg.is_command("console-command") ) {
-                minecontrol_message err("CONSOLE-MESSAGE");
-                err.add_field("Status","error");
-                err.add_field("Payload","Bad command sent to server in console mode");
-                err.write_protocol_message(clientChannel);
+            if ( !from.is_command("console-command") ) {
+                to.add_field("Status","error");
+                to.add_field("Payload","Bad command sent to server in console mode");
+                to.write_protocol_message(clientChannel);
+                to.reset_fields();
             }
             else {
                 // handle CONSOLE-COMMAND message
                 str k, v;
                 while (true) {
-                    if (!(msg.get_field_key_stream() >> k) || !(msg.get_field_value_stream() >> v))
+                    if (!(from.get_field_key_stream() >> k) || !(from.get_field_value_stream() >> v))
                         break;
                     if (k == "servercommand")
                         issue_command(v);
                 }
             }
         }
-        if ( msg.good() ) { // (assume that the connection was most likely shutdown if not good)
-            // send a console message with status shutdown
-            msg.reset_fields();
-            msg.assign_command("CONSOLE-MESSAGE");
-            msg.add_field("Status","shutdown");
-            msg.write_protocol_message(clientChannel);
-        }
         _clientMtx.lock();
-        // unregister the client
-        _clientchannel = NULL;
+        if (_clientchannel != NULL) {
+            // if a message was never received or if the last message received was good, then
+            // we exit console mode gracefully by sending a shutdown console message
+            if (from.good() || from.is_blank()/*just in case*/) {
+                // send a console message with status shutdown
+                to.assign_command("CONSOLE-MESSAGE");
+                to.add_field("Status","shutdown");
+                to.write_protocol_message(clientChannel);
+            }
+            // unregister the client
+            _clientchannel = NULL;
+        }
         _clientMtx.unlock();
         return _consoleEnabled ? console_communication_finished : console_communication_terminated;
     }
@@ -333,6 +358,8 @@ minecontrol_authority::execute_result minecontrol_authority::run_executable(str 
             _exit(1);
         // duplicate open pipe end as stdin
         _childStdIn[index].standard_duplicate();
+        // duplicate Minecraft server process's stdin as stdout
+        _iochannel.duplicate_output(STDOUT_FILENO);
         // modify path to point to minecontrol authority exe locations
         str path = AUTHORITY_EXE_PATH;
         path.push_back(':');
@@ -404,10 +431,8 @@ void* minecontrol_authority::processing(void* pparam)
     pthread_t tid;
     char msgbuf[BUF_SIZE+1]; // add 1 for the null terminator
     char* pbuf = msgbuf;
-    // start thread for child processing
-    if (pthread_create(&tid,NULL,&minecontrol_authority::child_processing,pparam) != 0)
-        throw minecontrol_authority_error();
     // handle message IO for authority
+    printf("BEGIN\n");
     while (object->_threadCondition) {
         size_type msglen = 0;
         size_type len = 0;
@@ -418,19 +443,37 @@ void* minecontrol_authority::processing(void* pparam)
                 break;
             size_type last = object->_iochannel.get_last_byte_count(), i = 0;
             len += last;
-            pbuf += last;
             while (i < last) {
+                ++msglen; // include endline in msglen count
                 if (pbuf[i] == '\n')
                     break;
                 ++i;
-                ++msglen;
             }
             if (i < last) {
                 pbuf[i] = 0;
                 break;
             }
-            if (len >= BUF_SIZE)
-                pbuf[i] = 0;
+            if (len >= BUF_SIZE) { // if true, len == BUF_SIZE
+                pbuf[i] = 0; // pbuf[i] is msgbuf[BUF_SIZE]
+                break;
+            }
+            pbuf += last;
+        }
+        if (len==0 && object->_iochannel.get_last_operation_status()!=success_read) {
+            /* the pipe is not responding; the server probably shutdown */
+            // if a client is connected, send a console-message with status shutdown; the
+            // mutex lock unsures that we don't conflict with another thread that might try
+            // to send the shutdown status
+            object->_clientMtx.lock();
+            if (object->_clientchannel != NULL) {
+                minecontrol_message msg("CONSOLE-MESSAGE");
+                msg.add_field("Status","shutdown");
+                msg.write_protocol_message(*object->_clientchannel);
+                object->_clientchannel = NULL;
+            }
+            object->_clientMtx.unlock();
+            object->_threadCondition = false;
+            break;
         }
         // if a client is registered with the authority, send the message as is
         object->_clientMtx.lock();
@@ -442,9 +485,12 @@ void* minecontrol_authority::processing(void* pparam)
             msg.write_protocol_message(*object->_clientchannel);
         }
         object->_clientMtx.unlock();
-        // if there are any child programs running, send a parsed version of the message
+        // if there are any child programs running, send a parsed version of the
+        // message to them on their stdin; also check the status of the running
+        // program
         object->_childMtx.lock();
         if (object->_childCnt > 0) {
+            int status;
             minecraft_server_message* pmessage;
             pmessage = minecraft_server_message::generate_message(msgbuf);
             if ( pmessage->good() ) {
@@ -457,42 +503,33 @@ void* minecontrol_authority::processing(void* pparam)
                 for (size_type i = 0;i < pmessage->get_token_count();++i)
                     ss << ' ' << pmessage->get_token(i);
                 ss << newline;
-                for (int i = 0;i < ALLOWED_CHILDREN;++i)
-                    if (object->_childID[i] != -1)
+                for (int i = 0;i < ALLOWED_CHILDREN;++i) {
+                    if (object->_childID[i] != -1) {
+                        // send parsed message to child process
                         object->_childStdIn[i].write(ss.get_device());
+                        // wait poll any child process so that they can be reaped as soon as possible; I don't
+                        // like the idea of a zombie apocalypse happening (at least at the moment)
+                        if (waitpid(object->_childID[i],&status,WNOHANG) == object->_childID[i]) {
+                            object->_childStdIn[i].close();
+                            object->_childID[i] = -1;
+                        }
+                    }
+                }
             }
             delete pmessage;
         }
         object->_childMtx.unlock();
         // transfer any extra bytes to the beginning of the buffer (for simplicity and to allow the full capacity)
         pbuf = msgbuf;
-        for (;msglen < len;++msglen)
-            *pbuf++ = msgbuf[msglen];
+        for (;msglen < len;++msglen) {
+            *pbuf = msgbuf[msglen];
+            ++pbuf;
+        }
     }
+    printf("END\n");
     // disable clients from plugging in and also disable new executable programs
     // from being started by remote clients
     object->_consoleEnabled = false;
-    // wait for the child processing thread to complete and join back up with it
-    if (pthread_join(tid,NULL) != 0)
-        throw minecontrol_authority_error();
-    return NULL;
-}
-/*static*/ void* minecontrol_authority::child_processing(void* pparam)
-{
-    minecontrol_authority* object = reinterpret_cast<minecontrol_authority*>(pparam);
-    // wait poll any child process so that they can be reaped as soon as possible
-    while (object->_consoleEnabled) {
-        for (int i = 0;i < ALLOWED_CHILDREN;++i) {
-            int status;
-            if (object->_childID[i]!=-1 && waitpid(object->_childID[i],&status,WNOHANG) == object->_childID[i]) {
-                object->_childMtx.lock();
-                object->_childStdIn[i].close();
-                object->_childID[i] = -1;
-                object->_childMtx.unlock();
-            }
-        }
-        usleep(250);
-    }
     object->_childMtx.lock();
     // wait for children to shutdown; give 5 seconds for termination else send kill signal
     for (int i = 0;i < ALLOWED_CHILDREN;++i) {
@@ -501,7 +538,6 @@ void* minecontrol_authority::processing(void* pparam)
             // close pipe to signal end of input
             object->_childStdIn[i].close();
             // give the process time to quit
-            usleep(250);
             for (int sec = 1;sec <= 5;++sec) {
                 int status;
                 result = waitpid(object->_childID[i],&status,WNOHANG);

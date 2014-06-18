@@ -14,15 +14,23 @@ namespace minecraft_controller
 
         pipe& operator =(const pipe&);
 
-        // close and duplicate this pipe as the standard
-        // IO channel for the current process; optionally
-        // include standard error                   [child]
-        void standard_duplicate(bool includeError = false);
+        /* these functions operate on the open read/write ends
+           that this io_device does not use
 
-        // closes open side of pipe for the process; this should
-        // be invoked in a parent process that spawns a child that
-        // invokes 'standard_duplicate'             [parent]
+           close and duplicate this pipe as the standard
+           IO channel for the current process; optionally
+           include standard error                   [child] */
+        void standard_duplicate(bool includeError = false);
+        /* closes open side of pipe for the process; this should
+           be invoked in a parent process that spawns a child that
+           invokes 'standard_duplicate'             [parent] */
         void close_open();
+
+        /* these functions operate on the read/write ends that
+           this io_device uses */
+        void duplicate(int fdInput,int fdOutput); // duplicate input and output as specified file descriptors
+        void duplicate_input(int fd); // duplicate just input as specified file descriptor
+        void duplicate_output(int fd); // duplicate just output as specified file descriptor
 
         static rtypes::size_type pipe_atomic_limit();
     private:

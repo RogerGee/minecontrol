@@ -76,6 +76,8 @@ namespace minecraft_controller
         { return _maxSeconds; }
         rtypes::uint16 max_servers() const
         { return _maxServers; }
+        const rtypes::str& alternate_home() const
+        { return _altHome; }
     private:
         mutex _mtx;
 
@@ -84,6 +86,7 @@ namespace minecraft_controller
         rtypes::byte _shutdownCountdown; // the number of seconds to wait for the server to shutdown before killing it
         rtypes::uint64 _maxSeconds; // the number of seconds to allow the server to run before auto-shutdown
         rtypes::uint16 _maxServers; // the maximum number of servers that minecontrol will allow
+        rtypes::str _altHome; // alternate home path
         rtypes::dynamic_array<minecraft_server_input_property> _overrideProperties; // properties that are always applied
         rtypes::dynamic_array<minecraft_server_input_property> _defaultProperties; // properties that are only applied when the user doesn't specify them
     };

@@ -137,9 +137,9 @@ namespace minecraft_controller
         bool is_responsive() const; // determine if server process is still responsive
     private:
         static const char* const AUTHORITY_EXE_PATH;
+        static const char* const AUTHORITY_EXEC_FILE;
         static const int ALLOWED_CHILDREN = 10;
         static void* processing(void*); // thread handler for message processing/message output to logged-in client or child processes
-        static void* child_processing(void*); // thread handler for managing running child processes
 
         pipe _iochannel; // IO channel to Minecraft server Java process (read/write enabled)
         rtypes::str _serverDirectory; // directory of server files that the authority manages; becomes the current working directory for the child authority process

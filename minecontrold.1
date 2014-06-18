@@ -1,0 +1,38 @@
+.TH minecontrold 1
+.SH NAME
+minecontrold \- authoritative minecontrol server
+.SH SYNOPSIS
+.B minecontrold
+[\fB \-\-help\fR]
+[\fB \-\-version\fR]
+.SH DESCRIPTION
+Minecontrold provides a minecontrol server, which authoritatively manages Minecraft server (Java)
+processes. It provides administrative functions as well as extended functionality to
+Minecraft server processes.
+
+With no command-line options, minecontrold runs as a daemon and should have root privileges so 
+it can authenticate users. The minecontrol server listens on the local domain bound to the path
+@minecontrol in the Linux abstract namespace and on TCP port 44446. A client (see \fBminecontrol\fR(1))
+may connect to either address when available.
+
+A minecontrol server runs one or more Minecraft servers for either an indefinite or set
+amount of time. The server authoritatively runs the Java process with the UID/GID of the logged
+in user and manages Minecraft directories and property files. Minecontrold also provides a
+"command authority" system which reads Minecraft server output and issues Minecraft server commands
+via small programs which a user can supply.
+.SH OPTIONS
+.TP
+no options
+run \fBminecontrold\fR as a daemon; process should be run as root user
+.TP
+.B --version
+display version information
+.TP
+.B --help
+display brief help
+.SH FILES
+\fBminecontrol.init\fR(5), \fBminecontrol.exec\fR(5)
+.SH AUTHOR
+Written by Roger P. Gee.
+.SH SEE ALSO
+\fBminecontrol\fR(1), \fBminecontrol.init\fR(5), \fBminecontrol.exec\fR(5)

@@ -2,6 +2,7 @@
 #include "minecontrol-protocol.h"
 #include "domain-socket.h"
 #include "net-socket.h"
+#include "mutex.h"
 #include <rlibrary/rstdio.h> // gets io_device
 #include <rlibrary/rstringstream.h>
 #include <rlibrary/rutility.h>
@@ -47,6 +48,11 @@ struct session_state
 
     // session alive control
     bool sessionControl;
+
+    // mutex for cross-thread safety and control
+    // variable for cross-thread sync
+    mutex mtx;
+    volatile bool control;
 };
 session_state::session_state()
 {
@@ -54,6 +60,7 @@ session_state::session_state()
     paddress = NULL;
     pcrypto = NULL;
     sessionControl = true;
+    control = true;
 }
 session_state::~session_state()
 {
@@ -72,7 +79,9 @@ static void sigpipe_handler(int); // handle SIGPIPE
 static void echo(bool onState);
 static bool check_status(io_device& device);
 static bool request_response_sequence(session_state& session);
+static bool print_response(minecontrol_message& response);
 static void insert_field_expression(minecontrol_message_buffer& msgbuf,const str& expression);
+static bool read_next_response_field(minecontrol_message& response,str& key,str& value);
 
 // commands
 static bool hello_exchange(session_state& session);
@@ -206,11 +215,16 @@ bool request_response_sequence(session_state& session)
         session.sessionControl = false;
         return false;
     }
+    return print_response(session.response);
+}
+
+bool print_response(minecontrol_message& response)
+{
     str key;
-    if ( rutil_strcmp(session.response.get_command(),"message") ) {
-        while (session.response.get_field_key_stream() >> key) {
+    if ( rutil_strcmp(response.get_command(),"message") ) {
+        while (response.get_field_key_stream() >> key) {
             if (key == "payload") {
-                session.response.get_field_value_stream() >> key;
+                response.get_field_value_stream() >> key;
                 stdConsole << key << newline;
                 break;
             }
@@ -218,10 +232,10 @@ bool request_response_sequence(session_state& session)
         stdConsole << '[' << PROGRAM_NAME << ": server responded with SUCCESS message]" << endline;
         return true;
     }
-    else if ( rutil_strcmp(session.response.get_command(),"error") ) {
-        while (session.response.get_field_key_stream() >> key) {
+    else if ( rutil_strcmp(response.get_command(),"error") ) {
+        while (response.get_field_key_stream() >> key) {
             if (key == "payload") {
-                session.response.get_field_value_stream() >> key;
+                response.get_field_value_stream() >> key;
                 errConsole << key << newline;
                 break;
             }
@@ -229,20 +243,20 @@ bool request_response_sequence(session_state& session)
         errConsole << '[' << PROGRAM_NAME << ": server responded with ERROR message]" << endline;
         return false;
     }
-    else if ( rutil_strcmp(session.response.get_command(),"list-message") ) {
-        while (session.response.get_field_key_stream() >> key) {
+    else if ( rutil_strcmp(response.get_command(),"list-message") ) {
+        while (response.get_field_key_stream() >> key) {
             if (key == "item") {
-                session.response.get_field_value_stream() >> key;
+                response.get_field_value_stream() >> key;
                 stdConsole << key << newline;
             }
         }
         stdConsole << '[' << PROGRAM_NAME << ": server responded with SUCCESS message]" << endline;
         return true;
     }
-    else if ( rutil_strcmp(session.response.get_command(),"list-error") ) {
-        while (session.response.get_field_key_stream() >> key) {
+    else if ( rutil_strcmp(response.get_command(),"list-error") ) {
+        while (response.get_field_key_stream() >> key) {
             if (key == "item") {
-                session.response.get_field_value_stream() >> key;
+                response.get_field_value_stream() >> key;
                 errConsole << key << newline;
             }
         }
@@ -284,6 +298,16 @@ void insert_field_expression(minecontrol_message_buffer& msgbuf,const str& expre
         fieldName.clear();
         fieldValue.clear();
     }
+}
+
+bool read_next_response_field(minecontrol_message& response,str& key,str& value)
+{
+    response.get_field_key_stream() >> key;
+    if ( response.get_field_key_stream().get_input_success() ) {
+        response.get_field_value_stream() >> value;
+        return response.get_field_value_stream().get_input_success();
+    }
+    return false;
 }
 
 bool hello_exchange(session_state& session)
@@ -412,19 +436,167 @@ void extend(session_state& session)
     request_response_sequence(session);
 }
 
-static void* console_output_thread(void*)
+static void* console_output_thread(void* pparam)
 { // handle output for the thread
-
+    session_state& session = *reinterpret_cast<session_state*>(pparam);
+    socket_stream connectStream(session.connectStream); // create a new stream to prevent race conditions
+    minecontrol_message serverMessage;
+    str key, value;
+    while (true) {
+        connectStream >> serverMessage;
+        if ( !serverMessage.good() )
+            break; // this shouldn't happen under normal circumstances (and if it does a SIGPIPE probably will be sent)
+        if ( serverMessage.is_command("console-message") ) {
+            while ( read_next_response_field(serverMessage,key,value) ) {
+                if (key=="status" && value=="shutdown") {
+                    session.control = false;
+                    return NULL;
+                }
+                else if (key=="payload" && value.length()>0) {
+                    int y, x, cnt;
+                    chtype currentLine[480];
+                    session.mtx.lock();
+                    getyx(stdscr,y,x);
+                    move(0,0);
+                    cnt = inchnstr(currentLine,480);
+                    for (int i = 0;i < cnt;++i)
+                        addch(' ');
+                    scrl(-1);
+                    move(1,0);
+                    addstr(value.c_str());
+                    move(0,0);
+                    for (int i = 0;i < cnt;++i)
+                        addch(currentLine[i]);
+                    move(y,x);
+                    refresh();
+                    session.mtx.unlock();
+                }
+            }
+        }
+    }
+    session.control = false;
     return NULL;
 }
 void console(session_state& session)
 {
+    bool good;
+    str key, value;
     pthread_t tid;
+    // get server id from user; first see if they specified it on the cmdline
+    session.inputStream >> key;
+    if (key.length() == 0) {
+        stdConsole << "Enter ID of running server: ";
+        stdConsole >> key;
+    }
+    // negotiate with the server for console mode
     session.request.begin("CONSOLE");
+    session.request.enqueue_field_name("ServerID");
+    session.request << key << flush;    
     session.connectStream << session.request.get_message();
+    session.connectStream >> session.response;
+    if ( !rutil_strcmp(session.response.get_command(),"console-message") ) {
+        print_response(session.response);
+        return;
+    }
+    good = false;
+    while ( read_next_response_field(session.response,key,value) ) {
+        if (key == "status") {
+            if (value == "established") {
+                good = true;
+                break;
+            }
+            if (value == "failed") {
+                errConsole << PROGRAM_NAME << ": minecontrol server is not accepting console clients at this time" << endline;
+                return;
+            }
+        }
+    }
+    if (!good) {
+        errConsole << PROGRAM_NAME << ": server refused console mode" << endline;
+        return;
+    }
+    // set up ncurses screen
+    initscr();
+    scrollok(stdscr,TRUE);
+    nodelay(stdscr,TRUE);
+    keypad(stdscr,TRUE);
+    move(0,0);
+    refresh();
     pthread_create(&tid,NULL,&console_output_thread,&session);
-
+    // get user command input; quit with 'quit'/'exit' command; use the session.mtx
+    // mutex to synchronize access to the connect stream and the ncurses library calls
+    str cache;
+    bool doCache = false; // cache commands to send as a batch later on
+    minecontrol_message request("CONSOLE-COMMAND");
+    static const int BUFFER_MAX = 480;
+    char buffer[BUFFER_MAX];
+    int top = 0;
+    session.control = true;
+    while (session.control) {
+        chtype ch;
+        session.mtx.lock();
+        if ((ch = getch()) == ERR) {
+            /* sleeping here is of the utmost importance; it
+               gives the other thread a chance to catch up */
+            usleep(500);
+            session.mtx.unlock();
+            continue;
+        }
+        if ((ch&A_CHARTEXT)=='\n' || top==BUFFER_MAX-1) {
+            // null terminate the buffer
+            buffer[top] = 0;
+            top = 0;
+        }
+        else {
+            if (ch == KEY_BACKSPACE) {
+                delch();
+                if (top > 0)
+                    --top;
+            }
+            else
+                buffer[top++] = ch&A_CHARTEXT;
+            session.mtx.unlock();
+            continue;
+        }
+        move(0,0);
+        clrtoeol();
+        refresh();
+        session.mtx.unlock();
+        if (buffer[0] == 0)
+            continue;
+        if ( rutil_strcmp(buffer,"cache") )
+            doCache = true;
+        else if ( rutil_strcmp(buffer,"release") ) {
+            size_type i;
+            doCache = false;
+            i = 0;
+            while (cache[i]) {
+                request.add_field("ServerCommand",cache.c_str()+i);
+                while (cache[i])
+                    ++i;
+                ++i;
+            }
+            session.connectStream << request;
+            request.reset_fields();
+            cache.clear();
+        }
+        else if (rutil_strcmp(buffer,"quit") || rutil_strcmp(buffer,"exit"))
+            break;
+        if (doCache) {
+            cache += buffer;
+            cache.push_back(0);
+            continue;
+        }
+        request.add_field("ServerCommand",buffer);
+        session.connectStream << request;
+        request.reset_fields();
+    }
+    session.request.begin("CONSOLE-QUIT");
+    session.connectStream << session.request.get_message();    
     pthread_join(tid,NULL);
+    // shutdown ncurses
+    erase();
+    endwin();
 }
 
 void stop(session_state& session)

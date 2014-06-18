@@ -2,10 +2,10 @@ test/mimic
 test/test
 obj/
 dobj/
-./minecontrol
-./minecontrol-debug
-./minecontrold
-./minecontrold-debug
+minecontrol
+minecontrol-debug
+minecontrold
+minecontrold-debug
 server.deb
 client.deb
 dpkg-server/usr/

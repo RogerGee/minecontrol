@@ -14,8 +14,8 @@ using namespace minecraft_controller;
 /*static*/ mutex controller_client::clientsMutex;
 /*static*/ dynamic_array<void*> controller_client::clients;
 /*static*/ size_type controller_client::CMD_COUNT_WITHOUT_LOGIN = 2;
-/*static*/ size_type controller_client::CMD_COUNT_WITH_LOGIN = 5;
-/*static*/ size_type controller_client::CMD_COUNT_WITH_PRIVALEGED_LOGIN = 1;
+/*static*/ size_type controller_client::CMD_COUNT_WITH_LOGIN = 6;
+/*static*/ size_type controller_client::CMD_COUNT_WITH_PRIVILEGED_LOGIN = 1;
 /*static*/ const char* const controller_client::CMDNAME_WITHOUT_LOGIN[] =
 {
     "login", "status"
@@ -28,19 +28,19 @@ using namespace minecraft_controller;
 {
     "start", "stop",
     "logout", "console",
-    "extend"
+    "extend", "exec"
 };
 /*static*/ const controller_client::command_call controller_client::CMDFUNC_WITH_LOGIN[] =
 {
     &controller_client::command_start, &controller_client::command_stop,
     &controller_client::command_logout, &controller_client::command_console,
-    &controller_client::command_extend
+    &controller_client::command_extend, &controller_client::command_exec
 };
-/*static*/ const char* const controller_client::CMDNAME_WITH_PRIVALEGED_LOGIN[] =
+/*static*/ const char* const controller_client::CMDNAME_WITH_PRIVILEGED_LOGIN[] =
 {
     "shutdown"
 };
-/*static*/ const controller_client::command_call controller_client::CMDFUNC_WITH_PRIVALEGED_LOGIN[] =
+/*static*/ const controller_client::command_call controller_client::CMDFUNC_WITH_PRIVILEGED_LOGIN[] =
 {
     &controller_client::command_shutdown
 };
@@ -200,15 +200,15 @@ bool controller_client::message_loop()
                 }
             }
             if (!executed) {
-                // attempt to process commands that can only be executed with privaleged login (root) status
-                for (size_type i = 0;i<CMD_COUNT_WITH_PRIVALEGED_LOGIN;i++) {
-                    if ( inMessage.is_command(CMDNAME_WITH_PRIVALEGED_LOGIN[i]) ) {
+                // attempt to process commands that can only be executed with privileged login (root) status
+                for (size_type i = 0;i<CMD_COUNT_WITH_PRIVILEGED_LOGIN;i++) {
+                    if ( inMessage.is_command(CMDNAME_WITH_PRIVILEGED_LOGIN[i]) ) {
                         if (userInfo.uid != 0) {
-                            prepare_error() << "Permission denied: '" << inMessage.get_command() << "' command requires privaleged (root) authentication" << flush;
+                            prepare_error() << "Permission denied: '" << inMessage.get_command() << "' command requires privileged (root) authentication" << flush;
                             connection << msgbuf.get_message();
                         }
                         else
-                            (this->*CMDFUNC_WITH_PRIVALEGED_LOGIN[i])(inMessage.get_field_key_stream(),inMessage.get_field_value_stream());
+                            (this->*CMDFUNC_WITH_PRIVILEGED_LOGIN[i])(inMessage.get_field_key_stream(),inMessage.get_field_value_stream());
                         executed = true;
                         break;
                     }
@@ -290,6 +290,7 @@ bool controller_client::command_login(rstream& kstream,rstream& vstream) // hand
     userInfo.uid = pwd->pw_uid;
     userInfo.gid = pwd->pw_gid;
     userInfo.homeDirectory = pwd->pw_dir;
+    userInfo.userName = username;
     prepare_message() << "Authentication complete: logged in as '" << username << '\'' << flush;
     connection << msgbuf.get_message();
     client_log(minecontrold::standardLog) << "client authenticated successfully as '" << username << '\'' << endline;
@@ -420,6 +421,11 @@ bool controller_client::command_extend(rstream& kstream,rstream& vstream)
     minecraft_server_manager::attach_server(&servers[0],servers.size());
     return true;
 }
+bool controller_client::command_exec(rstream&,rstream&)
+{
+
+    return false;
+}
 bool controller_client::command_stop(rstream& kstream,rstream& vstream)
 {
     str key;
@@ -444,7 +450,7 @@ bool controller_client::command_stop(rstream& kstream,rstream& vstream)
     }
     // ask the server manager for handles to running servers that the user can access; we need to make sure no blocking calls happen here (shouldn't be a problem)
     if ((result = minecraft_server_manager::lookup_auth_servers(userInfo,servers)) == minecraft_server_manager::auth_lookup_none) {
-        prepare_error() << "There are no active servers running to stop" << flush;
+        prepare_error() << "There are no server processes running at this time" << flush;
         connection << msgbuf.get_message();
         return false;
     }
@@ -491,7 +497,7 @@ bool controller_client::command_console(rstream& kstream,rstream& vstream)
     }
     // ask the server manager for handles to running servers that the user can access; we need to make sure no blocking calls happen here (shouldn't be a problem)
     if ((result = minecraft_server_manager::lookup_auth_servers(userInfo,servers)) == minecraft_server_manager::auth_lookup_none) {
-        prepare_message() << "There are no active servers running to stop" << flush;
+        prepare_message() << "There are no server processes running at this time" << flush;
         connection << msgbuf.get_message();
         return false;
     }

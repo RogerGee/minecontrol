@@ -11,8 +11,11 @@ pipe::pipe()
 }
 minecraft_controller::pipe& pipe::operator =(const pipe& obj)
 {
-    if (this != &obj)
+    if (this != &obj) {
         _assign(obj);
+        _fdOpenRead = obj._fdOpenRead;
+        _fdOpenWrite = obj._fdOpenWrite;
+    }
     return *this;
 }
 void pipe::standard_duplicate(bool includeError)
@@ -56,13 +59,31 @@ void pipe::close_open()
         _fdOpenRead = -1;
     }
 }
+void pipe::duplicate(int fdInput,int fdOutput)
+{
+    duplicate_input(fdInput);
+    duplicate_output(fdOutput);
+}
+void pipe::duplicate_input(int fd)
+{
+    io_resource* pcontext = _getInputContext();
+    if (pcontext!=NULL && dup2(pcontext->interpret_as<int>(),fd)!=fd)
+        throw pipe_error();
+}
+void pipe::duplicate_output(int fd)
+{
+    io_resource* pcontext = _getOutputContext();
+    if (pcontext!=NULL && dup2(pcontext->interpret_as<int>(),fd)!=fd)
+        throw pipe_error();
+}
+
 /*static*/ size_type pipe::pipe_atomic_limit()
 {
     return PIPE_BUF;
 }
 void pipe::_openEvent(const char*,io_access_flag access,io_resource** pinput,io_resource** poutput,void**,uint32)
 {
-    // simulate full duplex mode by creating two pipes
+    // simulate full duplex mode by creating two pipes (that is, if the access is read/write)
     int pipe1[2]/*read*/, pipe2[2]/*write*/;
     if ((access&read_access)!=0 && ::pipe(pipe1)!=0)
         throw pipe_error();

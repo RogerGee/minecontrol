@@ -48,6 +48,8 @@ namespace minecraft_controller
 
         bool good() const
         { return _state; }
+        bool is_blank() const
+        { return _command.length() == 0; }
         bool is_command(const char* command) const
         { return _command == command; }
 

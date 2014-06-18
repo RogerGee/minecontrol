@@ -19,7 +19,7 @@ using namespace minecraft_controller;
 
 // globals
 extern char **environ;
-static const char* const SERVER_INIT_FILE = "minecontrol.init"; // relative to current working directory
+static const char* const SERVER_INIT_FILE = "minecontrol.init"; // relative to current working directory (this is a global server init file)
 static const char* const MINECRAFT_USER_DIRECTORY = "minecraft";
 
 // minecraft_controller::minecraft_server_info
@@ -128,7 +128,7 @@ minecraft_server_init_manager::minecraft_server_init_manager()
     _argumentsBuffer.push_back(0);
     _argumentsBuffer += "-jar";
     _argumentsBuffer.push_back(0);
-    _argumentsBuffer += "minecraftserver.jar";
+    _argumentsBuffer += "minecraft_server.jar";
     _argumentsBuffer.push_back(0);
     _argumentsBuffer += "nogui";
     _argumentsBuffer.push_back(0);
@@ -153,7 +153,7 @@ void minecraft_server_init_manager::read_from_file()
             ssValue >> key;
             rutil_to_lower_ref(key);
             // test for each key
-            if (key.length()==0 || key[0]=='!') // comment or blank line
+            if (key.length()==0 || key[0]=='#') // comment or blank line
                 continue;
             if (key == "exec")
 	        ssValue.getline(_exec);
@@ -173,6 +173,14 @@ void minecraft_server_init_manager::read_from_file()
                 ssValue >> _maxServers;
             else if (key == "shutdown-countdown")
                 ssValue >> _shutdownCountdown;
+            else if (key == "alt-home") {
+                ssValue >> _altHome;
+                // remove trailing slashes
+                size_type i = _altHome.length();
+                while (i>1 && _altHome[i-1]=='/')
+                    --i;
+                _altHome.truncate(i);
+            }
             else {
                 // handle default and override properties of the
                 // form: override-<property-key> OR default-<property-key>
@@ -264,11 +272,21 @@ minecraft_server::~minecraft_server()
 }
 minecraft_server::minecraft_server_start_condition minecraft_server::begin(minecraft_server_info& info)
 {
-    _iochannel.open(); // create new pipe for communication
-    pid_t pid = ::fork();
-    path mcraftdir(info.userInfo.homeDirectory);
+    pid_t pid;
+    const str& altHome = _globals.alternate_home();
+    path mcraftdir;
+    if (altHome.length() > 0) {
+        mcraftdir = altHome;
+        mcraftdir += info.userInfo.userName;
+    }
+    else
+        mcraftdir = info.userInfo.homeDirectory;
+    // compute the server working directory (as a subdirectory of the home directory and the minecraft user directory)
     mcraftdir += MINECRAFT_USER_DIRECTORY;
     mcraftdir += info.internalName;
+    // create new pipe for communication; this needs to be done before the fork
+    _iochannel.open();
+    pid = ::fork();
     if (pid == 0) { // child
         // check server limit before proceeding
         if (_idSet.size()+1 > size_type(_globals.max_servers()))
@@ -283,7 +301,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         if ( !mcraftdir.exists() ) {
             if (!info.isNew)
                 _exit((int)mcraft_start_server_does_not_exist);
-            if ( !mcraftdir.make() )
+            if ( !mcraftdir.make(true) ) // create sub-directories if need be
                 _exit((int)mcraft_start_server_filesystem_error);
         }
         else if (info.isNew)
@@ -651,7 +669,7 @@ server_handle::server_handle()
     auth_lookup_result result = auth_lookup_none;
     _mutex.lock();
     for (size_type i = 0;i<_handles.size();i++) {
-        if (_handles[i]->pserver != NULL) {
+        if (_handles[i]->pserver!=NULL && !_handles[i]->_issued) {
             if (_handles[i]->pserver->_uid==login.uid || _handles[i]->pserver->_gid==login.gid || login.uid==0/*is root*/ || login.gid==0) {
                 _handles[i]->_issued = true;
                 outList.push_back(_handles[i]);

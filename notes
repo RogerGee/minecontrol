@@ -128,6 +128,7 @@ sent. The client simply needs to shutdown the socket connection to cleanly disco
         CONSOLE             (begin console communications; client should begin a new thread that reads messages and writes to output screen;
                                    the server responds to this command with a CONSOLE-MESSAGE reponse with Status=established; no other console
                                    commands are directly acknowledged once in console mode)
+         ServerID: [integer number]
         CONSOLE-COMMAND     (send a Minecraft server command string to minecontrold; minecontrold will forward this message to Java)
          ServerCommand: [string]
          ServerCommand: [string]
@@ -156,7 +157,8 @@ sent. The client simply needs to shutdown the socket connection to cleanly disco
                  failed: the client's CONSOLE command was rejected (no payload)
                  message: the payload field contains a a Minecraft server command string
                  error: error occurred (client most likely sent bad command during console mode); payload contains error message
-                 shutdown: the server is shutting down the console mode (no payload); this is a response to a CONSOLE-QUIT or an internal shutdown
+                 shutdown: the server is shutting down the console mode (no payload); this is a response to a CONSOLE-QUIT or an internal shutdown;
+                           (NOTE! In the case of an internal shutdown, a console-quit still needs to be sent)
          Payload: [string]
 
 RSA Cryptography

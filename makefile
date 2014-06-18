@@ -14,7 +14,7 @@ OBJECT_DIRECTORY_NAME = obj/
 OBJECT_DIRECTORY_NAME_DEBUG = dobj/
 LINK = g++
 LIBRARY_SERVER = -lrlibrary -pthread -lcrypt -lcrypto
-LIBRARY_CLIENT = -lrlibrary -pthread -lcrypto
+LIBRARY_CLIENT = -lrlibrary -pthread -lcrypto -lncurses
 OUT = -o 
 
 # programs and options based on configuration
@@ -52,7 +52,7 @@ MINECONTROL_CLIENT_H = minecontrol-client.h $(SOCKET_H) $(MUTEX_H) $(MINECONTROL
 
 # object code
 OBJECTS_SERVER = minecraft-controller.o minecraft-server.o minecraft-server-properties.o minecontrol-client.o minecontrol-authority.o socket.o domain-socket.o net-socket.o pipe.o mutex.o minecontrol-protocol.o
-OBJECTS_CLIENT = minecontrol.o socket.o domain-socket.o net-socket.o minecontrol-protocol.o
+OBJECTS_CLIENT = minecontrol.o socket.o domain-socket.o net-socket.o mutex.o minecontrol-protocol.o
 
 # make objects relative to object directory
 OBJECTS_SERVER := $(addprefix $(OBJECT_DIRECTORY),$(OBJECTS_SERVER))
@@ -69,7 +69,7 @@ $(PROGRAM_SERVER): $(OBJECTS_SERVER)
 $(PROGRAM_CLIENT): $(OBJECTS_CLIENT)
 	$(LINK) $(OUT)$(PROGRAM_CLIENT) $(OBJECTS_CLIENT) $(LIBRARY_CLIENT)
 
-$(OBJECT_DIRECTORY)minecontrol.o: minecontrol.cpp $(DOMAIN_SOCKET_H)
+$(OBJECT_DIRECTORY)minecontrol.o: minecontrol.cpp $(DOMAIN_SOCKET_H) $(NET_SOCKET_H) $(MUTEX_H)
 	$(COMPILE) $(OUT)$(OBJECT_DIRECTORY)minecontrol.o minecontrol.cpp
 
 $(OBJECT_DIRECTORY)minecraft-controller.o: minecraft-controller.cpp $(MINECRAFT_SERVER_H) $(MINECONTROL_CLIENT_H) $(MINECRAFT_CONTROLLER_H) $(DOMAIN_SOCKET_H) $(NET_SOCKET_H)
@@ -125,7 +125,7 @@ package: $(PACKAGE_NAME_SERVER) $(PACKAGE_NAME_CLIENT)
 
 $(PACKAGE_NAME_SERVER):
 	mkdir -p dpkg-server/usr/bin
-	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) dpkg-server/usr/bin; chmod go-rwx minecontrol-deb/usr/bin/$(PROGRAM_NAME_SERVER); fi;
+	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) dpkg-server/usr/bin; chmod go-rwx dpkg-server/usr/bin/$(PROGRAM_NAME_SERVER); fi;
 	dpkg-deb --build dpkg-server/ $(PACKAGE_NAME_SERVER)
 
 $(PACKAGE_NAME_CLIENT):
