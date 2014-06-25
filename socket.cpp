@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <sys/un.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <unistd.h>
 #include <errno.h>
 using namespace rtypes;
@@ -26,6 +27,9 @@ const char* socket_address::get_address_string() const
 socket::socket()
     : _id(0)
 {
+}
+socket::~socket()
+{ // allow for virtual destruction
 }
 minecraft_controller::socket& socket::operator =(const socket& obj)
 {
@@ -55,13 +59,18 @@ bool socket::bind(const socket_address& address)
     }
     return false;
 }
-socket_accept_condition socket::accept(socket*& snew)
+socket_accept_condition socket::accept(socket*& snew,str& fromAddress)
 {
     io_resource* pres;
     snew = NULL;
     pres = _getValidContext();
     if (pres != NULL) {
-        int fd = ::accept(pres->interpret_as<int>(),NULL,NULL);
+        int fd;
+        size_type prelen;
+        socklen_t len;
+        sockaddr* paddrbuf = reinterpret_cast<sockaddr*>(_getAddressBuffer(prelen));
+        len = prelen;
+        fd = ::accept(pres->interpret_as<int>(),paddrbuf,&len);
         if (fd != -1) {
             io_resource* input, *output;
             input = new io_resource;
@@ -77,6 +86,8 @@ socket_accept_condition socket::accept(socket*& snew)
             --_ResourceRef(output);
             // assign a unique id to represent the connection
             snew->_id = _idTop++;
+            // get address of remote peer
+            _addressBufferToString(fromAddress);
             return socket_accepted;
         }
         else if (errno==EINTR || errno==ECONNABORTED || errno==EBADF || errno==EINVAL)
@@ -100,6 +111,24 @@ bool socket::connect(const socket_address& address)
             break;
     }
     return false;
+}
+bool socket::select(uint32 timeout)
+{
+    int sock;
+    int result;
+    timeval tm;
+    io_resource* pres;
+    fd_set rset;
+    tm.tv_sec = timeout;
+    tm.tv_usec = 0;
+    pres = _getValidContext();
+    sock = pres->interpret_as<int>();
+    FD_ZERO(&rset);
+    FD_SET(sock,&rset);
+    result = ::select(sock+1,&rset,NULL,NULL,&tm);
+    if (result == -1)
+        throw socket_error();
+    return result != 0;
 }
 bool socket::shutdown()
 {

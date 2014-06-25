@@ -65,6 +65,11 @@ void network_socket_address::_prepareAddressString(char* buffer,rtypes::size_typ
 
 network_socket::network_socket()
 {
+    _addrbuf = new sockaddr_in;
+}
+network_socket::~network_socket()
+{
+    delete reinterpret_cast<sockaddr_in*>(_addrbuf);
 }
 void network_socket::_openSocket(int& fd)
 {
@@ -75,6 +80,24 @@ void network_socket::_openSocket(int& fd)
 void network_socket::_createClientSocket(socket*& socknew)
 {
     socknew = new network_socket;
+}
+void* network_socket::_getAddressBuffer(size_type& length)
+{
+    length = sizeof(sockaddr_in);
+    return _addrbuf;
+}
+void network_socket::_addressBufferToString(str& s) const
+{
+    size_type i;
+    s.resize(20);
+    inet_ntop(AF_INET,&reinterpret_cast<const sockaddr_in*>(_addrbuf)->sin_addr,&s[0],s.size());
+    i = 0;
+    while (i < s.size()) {
+        if (s[i] == 0)
+            break;
+        ++i;
+    }
+    s.resize(i);
 }
 
 network_socket_stream::network_socket_stream()

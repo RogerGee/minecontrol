@@ -1,0 +1,93 @@
+#!/bin/bash
+# create-server-package
+# usage: ./create-server-package build-dir version-string architecture
+
+# check usage
+if [ $# -lt 3 ]
+then
+echo usage: $0 build-dir version-string architecture
+exit 1
+fi
+
+# directories
+ROOT_DIR=$1
+INFO_DIR=$ROOT_DIR/DEBIAN
+BINARY_DIR=$ROOT_DIR/usr/bin
+INITD_DIR=$ROOT_DIR/etc/init.d
+MAN1_DIR=$ROOT_DIR/usr/share/man/man1
+MAN5_DIR=$ROOT_DIR/usr/share/man/man5
+LIB_DIR=$ROOT_DIR/usr/lib/minecontrold
+STD_LIB_DIR=$ROOT_DIR/usr/lib
+
+# source files
+MAN1_PAGES=minecontrold.1
+MAN5_PAGES="minecontrol.exec.5 minecontrol.init.5"
+AUTH_LIBRARY_REALNAME=libminecontrolauth.so.1.0.0
+AUTH_LIBRARY_SONAME=libminecontrolauth.so.1
+AUTH_LIBRARY_LINKNAME=libminecontrolauth.so
+AUTH_LIBRARY=auth/$AUTH_LIBRARY_REALNAME
+AUTH_PROGRAMS=auth/journal auth/construct auth/spawner
+
+# destination files
+CONTROL_FILE=$INFO_DIR/control
+POSTINST_FILE=$INFO_DIR/postinst
+PRERM_FILE=$INFO_DIR/prerm
+
+# create directories if they do not exist
+if [ ! -d $ROOT_DIR ]
+then
+mkdir $ROOT_DIR
+fi
+if [ ! -d $INFO_DIR ]
+then
+mkdir $INFO_DIR
+fi
+if [ ! -d $BINARY_DIR ]
+then
+mkdir -p $BINARY_DIR
+fi
+if [ ! -d $INITD_DIR ]
+then
+mkdir -p $INITD_DIR
+fi
+if [ ! -d $MAN1_DIR ]
+then
+mkdir -p $MAN1_DIR
+fi
+if [ ! -d $MAN5_DIR ]
+then
+mkdir -p $MAN5_DIR
+fi
+if [ ! -d $LIB_DIR ]
+then
+mkdir -p $LIB_DIR
+fi
+
+# make the control file
+echo "Package: minecontrold" > $CONTROL_FILE
+echo Version: $2 >> $CONTROL_FILE
+echo "Maintainer: Roger Gee <rpg11a@acu.edu>" >> $CONTROL_FILE
+echo "Description: A daemon for authorizing and managing Minecraft servers" >> $CONTROL_FILE
+echo Architecture: $3 >> $CONTROL_FILE
+echo "Depends: libc6, libstdc++6, libssl1.0.0" >> $CONTROL_FILE
+
+# copy all files to destinations
+cp prerm $PRERM_FILE
+cp postinst $POSTINST_FILE
+cp minecontrold $BINARY_DIR
+cp minecontrold.init.d $INITD_DIR/minecontrold
+cp $MAN1_PAGES $MAN1_DIR
+cp $MAN5_PAGES $MAN5_DIR
+cp $AUTH_LIBRARY $LIB_DIR
+cp $AUTH_PROGRAMS $LIB_DIR
+
+# set up shared library sym-links
+ln -s $LIB_DIR/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_SONAME
+ln -s $LIB_DIR/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_LINKNAME
+
+# compress man pages
+gzip -9 $MAN1_DIR/*.1
+gzip -9 $MAN5_DIR/*.5
+
+# create .deb package
+dpkg-deb --build $ROOT_DIR .

@@ -45,12 +45,14 @@ namespace minecraft_controller
     {
     public:
         socket();
+        virtual ~socket();
 
         socket& operator =(const socket&);
 
         bool bind(const socket_address& address); // server
-        socket_accept_condition accept(socket*& socknew); // server
+        socket_accept_condition accept(socket*& socknew,rtypes::str& fromAddress); // server
         bool connect(const socket_address& address); // client
+        bool select(rtypes::uint32 timeout); // wait for 'timeout' seconds for input on socket
         bool shutdown(); // client and server
 
         // gets unique id for accepted connection socket; a
@@ -72,6 +74,8 @@ namespace minecraft_controller
         virtual void _openSocket(int& fd) = 0;
         virtual void _createClientSocket(socket*& socknew) = 0;
         virtual socket_family _getFamily() const = 0;
+        virtual void* _getAddressBuffer(rtypes::size_type& length) = 0;
+        virtual void _addressBufferToString(rtypes::str& s) const = 0;
     };
 
     /* this behaves almost like an rtypes::io_stream except it handles endline

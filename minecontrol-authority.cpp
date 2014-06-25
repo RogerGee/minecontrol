@@ -1,6 +1,7 @@
 // minecontrol-authority.cpp
 #include "minecontrol-authority.h"
 #include "minecontrol-protocol.h"
+#include "minecraft-controller.h"
 #include <rlibrary/rfile.h>
 #include <rlibrary/rstringstream.h>
 #include <rlibrary/rutility.h>
@@ -28,6 +29,7 @@ using namespace minecraft_controller;
     static const minecraft_server_message_gist MESSAGE_GISTS[] = {
         gist_player_chat,
         gist_server_chat,
+        gist_server_secret_chat,
         gist_player_login,
         gist_player_id,
         gist_player_join,
@@ -43,6 +45,7 @@ using namespace minecraft_controller;
     static const char* const GIST_FORMATS[] = {
         "<%S> %S", // gist_player_chat
         "[%S] %S", // gist_server_chat
+        "You whisper to %S: %S", // gist_server_secret_chat
         "%S[/%S] logged in with entity id %S at (%S, %S, %S)", // gist_player_login
         "UUID of player %S is %S", // gist_player_id
         "%S joined the game", // gist_player_join
@@ -120,6 +123,8 @@ str minecraft_server_message::get_type_string() const
 }
 str minecraft_server_message::get_gist_string() const
 {
+    // these strings determine what an authority program
+    // sees as its first token on an input line
     static const char* const DEFAULT = "type-unknown";
     switch (_gist) {
     case gist_server_start:
@@ -128,6 +133,8 @@ str minecraft_server_message::get_gist_string() const
         return "bind";
     case gist_server_chat:
         return "server-chat";
+    case gist_server_secret_chat:
+        return "server-secret-chat";
     case gist_server_shutdown:
         return "shutdown";
     case gist_player_id:
@@ -217,6 +224,7 @@ minecontrol_authority::minecontrol_authority(const pipe& ioChannel,const str& se
     _threadID = -1;
     _consoleEnabled = true;
     _threadCondition = true;
+    _clientchannel = NULL;
     // start default scripts from _serverDirectory/AUTHORITY_EXEC_FILE
     file execFile;
     str execFileName = _serverDirectory;
@@ -228,11 +236,17 @@ minecontrol_authority::minecontrol_authority(const pipe& ioChannel,const str& se
         while ( fstream.has_input() ) {
             fstream.getline(line);
             rutil_strip_whitespace_ref(line);
-            // check for comments
-            if (line[0] == '#')
+            // check for comments and blank lines
+            if (line[0]=='#' || line.length()==0)
                 continue;
             // assume 'line' is a command line
-            run_executable(line);
+            int pid;
+            auto result = run_executable(line,&pid);
+            // log result message
+            minecontrold::standardLog << result;
+            if (pid != -1)
+                minecontrold::standardLog << " (" << AUTHORITY_EXEC_FILE << ": " << "process=" << pid << ", cmd=" << line << ')';
+            minecontrold::standardLog << endline;
         }
     }
     // start processing thread; this thread is joinable and will be joined with at destruction-time
@@ -315,13 +329,13 @@ void minecontrol_authority::issue_command(const str& commandLine)
     buffer[len+1] = 0;
     _iochannel.write(buffer);
 }
-minecontrol_authority::execute_result minecontrol_authority::run_executable(str commandLine)
+minecontrol_authority::execute_result minecontrol_authority::run_executable(str commandLine,int* ppid)
 {
     static const int ARGV_BUF_SIZE = 512;
     pid_t pid;
     int index;
-    const char* program;
-    const char* argv[ARGV_BUF_SIZE];
+    if (ppid != NULL)
+        *ppid = -1;
     // the entire operation needs to be atomic; if the lock is aquired after the 
     // processing thread shuts down, the _consoleEnabled flag should be false
     _childMtx.lock();
@@ -336,11 +350,6 @@ minecontrol_authority::execute_result minecontrol_authority::run_executable(str 
         _childMtx.unlock();
         return authority_exec_too_many_running;
     }
-    // prepare arguments
-    if ( !_prepareArgs(&commandLine[0],&program,argv,ARGV_BUF_SIZE) ) {
-        _childMtx.unlock();
-        return authority_exec_too_many_arguments;
-    }
     // create pipe for child's stdin
     if ( !_childStdIn[index].open_output() ) {
         _childMtx.unlock();
@@ -353,29 +362,40 @@ minecontrol_authority::execute_result minecontrol_authority::run_executable(str 
         return authority_exec_cannot_run;
     }
     if (pid == 0) {
+        const char* program;
+        const char* argv[ARGV_BUF_SIZE];
+        // prepare arguments
+        if ( !_prepareArgs(&commandLine[0],&program,argv,ARGV_BUF_SIZE) )
+            _exit((int)authority_exec_too_many_arguments);
         // change permissions for this process
-        if (setresuid(_login.uid,_login.uid,_login.uid)!=0 || setresgid(_login.gid,_login.gid,_login.gid)!=0)
-            _exit(1);
+        if (setresgid(_login.gid,_login.gid,_login.gid)==-1 || setresuid(_login.uid,_login.uid,_login.uid)==-1)
+            _exit((int)authority_exec_attr_fail);
         // duplicate open pipe end as stdin
         _childStdIn[index].standard_duplicate();
-        // duplicate Minecraft server process's stdin as stdout
+        // duplicate Minecraft server process's stdin as stdout, then
+        // close all open file descriptors except standard fds
         _iochannel.duplicate_output(STDOUT_FILENO);
+        int maxfd;
+        maxfd = sysconf(_SC_OPEN_MAX);
+        if (maxfd == -1)
+            maxfd = 1000;
+        for (int fd = 3;fd < maxfd;++fd)
+            ::close(fd);
         // modify path to point to minecontrol authority exe locations
         str path = AUTHORITY_EXE_PATH;
         path.push_back(':');
-        path += _login.homeDirectory;
-        path += "/minecraft";
-        if (setenv("PATH",path.c_str(),1) != 0)
-            _exit(5);
+        path += _serverDirectory;
+        if (setenv("PATH",path.c_str(),1) == -1)
+            _exit((int)authority_exec_attr_fail);
         // attempt to execute program
         if (execvpe(program,(char* const*)argv,environ) == -1) {
             if (errno == ENOENT)
-                _exit(2);
+                _exit((int)authority_exec_program_not_found);
             if (errno == ENOEXEC)
-                _exit(3);
+                _exit((int)authority_exec_not_program);
             if (errno == EACCES)
-                _exit(4);
-            _exit(1);
+                _exit((int)authority_exec_access_denied);
+            _exit((int)authority_exec_unspecified);
         }
         // control no longer in this program
     }
@@ -389,25 +409,22 @@ minecontrol_authority::execute_result minecontrol_authority::run_executable(str 
     int status;
     pid_t result = waitpid(pid,&status,WNOHANG);
     if (result == pid) {
-        int code = WEXITSTATUS(status);
+        execute_result code = (execute_result)WEXITSTATUS(status);
         _childMtx.unlock();
         // close the pipe
         _childStdIn[index].close();
-        if (code == 0)
-            return authority_exec_okay;
-        if (code == 2)
-            return authority_exec_program_not_found;
-        if (code == 3)
-            return authority_exec_not_program;
-        if (code == 4)
-            return authority_exec_access_denied;
-        return authority_exec_cannot_run;
+        if (code != authority_exec_okay)
+            return code;
     }
-    // we are good to go (the child process survived more than 2 seconds)
-    ++_childCnt;
-    _childID[index] = pid;
-    _childMtx.unlock();
-    return authority_exec_okay;
+    else {
+        // we are good to go (the child process survived long enough to enter processing mode)
+        ++_childCnt;
+        _childID[index] = pid;
+        _childMtx.unlock();
+    }
+    if (ppid != NULL)
+        *ppid = pid;
+    return result==pid ? authority_exec_okay_exited : authority_exec_okay;
 }
 bool minecontrol_authority::is_responsive() const
 {
@@ -432,7 +449,6 @@ void* minecontrol_authority::processing(void* pparam)
     char msgbuf[BUF_SIZE+1]; // add 1 for the null terminator
     char* pbuf = msgbuf;
     // handle message IO for authority
-    printf("BEGIN\n");
     while (object->_threadCondition) {
         size_type msglen = 0;
         size_type len = 0;
@@ -493,7 +509,7 @@ void* minecontrol_authority::processing(void* pparam)
             int status;
             minecraft_server_message* pmessage;
             pmessage = minecraft_server_message::generate_message(msgbuf);
-            if ( pmessage->good() ) {
+            if (pmessage!=NULL && pmessage->good()) {
                 /* prepare a simple message to send to any child programs; this message
                    is already parsed so that the client doesn't have to deal with too much
                    complexity with the Minecraft server output; each token in the message is
@@ -526,7 +542,6 @@ void* minecontrol_authority::processing(void* pparam)
             ++pbuf;
         }
     }
-    printf("END\n");
     // disable clients from plugging in and also disable new executable programs
     // from being started by remote clients
     object->_consoleEnabled = false;
@@ -571,4 +586,32 @@ void* minecontrol_authority::processing(void* pparam)
         return true;
     }
     return false;
+}
+
+rstream& minecraft_controller::operator <<(rstream& stream,minecontrol_authority::execute_result result)
+{
+    if (result == minecontrol_authority::authority_exec_okay)
+        return stream << "Authority program started successfully";
+    else if (result == minecontrol_authority::authority_exec_okay_exited)
+        return stream << "Authority program started and completed successfully";
+    stream << "Authority script failed execution: ";
+    if (result == minecontrol_authority::authority_exec_cannot_run)
+        stream << "the program couldn't be executed";
+    else if (result == minecontrol_authority::authority_exec_access_denied)
+        stream << "access is denied for the specified user";
+    else if (result == minecontrol_authority::authority_exec_attr_fail)
+        stream << "the process's attributes could not be correctly set";
+    else if (result == minecontrol_authority::authority_exec_not_program)
+        stream << "specified file wasn't an executable program";
+    else if (result == minecontrol_authority::authority_exec_program_not_found)
+        stream << "specified program was not found";
+    else if (result == minecontrol_authority::authority_exec_too_many_arguments)
+        stream << "too many arguments were supplied on the program's command-line";
+    else if (result == minecontrol_authority::authority_exec_too_many_running)
+        stream << "too many programs are running under the authority for this server";
+    else if (result == minecontrol_authority::authority_exec_not_ready)
+        stream << "the authority is not ready to execute programs at this time";
+    else
+        stream << "the reason was unspecified";
+    return stream;
 }

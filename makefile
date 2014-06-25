@@ -8,8 +8,6 @@ PROGRAM_NAME_SERVER = minecontrold
 PROGRAM_NAME_SERVER_DEBUG = minecontrold-debug
 PROGRAM_NAME_CLIENT = minecontrol
 PROGRAM_NAME_CLIENT_DEBUG = minecontrol-debug
-PACKAGE_NAME_SERVER = server.deb
-PACKAGE_NAME_CLIENT = client.deb
 OBJECT_DIRECTORY_NAME = obj/
 OBJECT_DIRECTORY_NAME_DEBUG = dobj/
 LINK = g++
@@ -21,18 +19,12 @@ OUT = -o
 ifeq ($(MAKECMDGOALS),debug)
 PROGRAM_SERVER = $(PROGRAM_NAME_SERVER_DEBUG)
 PROGRAM_CLIENT = $(PROGRAM_NAME_CLIENT_DEBUG)
-COMPILE = g++ -g -c -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-unused-variable -pedantic-errors --std=gnu++0x
-ifeq ($(MAKECMDGOALS),test)
-COMPILE := $(COMPILE) -DMINECONTROL_TEST
-endif
+COMPILE = g++ -g -c -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-unused-variable -pedantic-errors --std=gnu++0x -DMINECONTROL_TEST
 OBJECT_DIRECTORY = $(OBJECT_DIRECTORY_NAME_DEBUG)
 else
 PROGRAM_SERVER = $(PROGRAM_NAME_SERVER)
 PROGRAM_CLIENT = $(PROGRAM_NAME_CLIENT)
 COMPILE = g++ -c -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-unused-variable -pedantic-errors --std=gnu++0x
-ifeq ($(MAKECMDGOALS),test)
-COMPILE := $(COMPILE) -DMINECONTROL_TEST
-endif
 OBJECT_DIRECTORY = $(OBJECT_DIRECTORY_NAME)
 endif
 
@@ -60,7 +52,6 @@ OBJECTS_CLIENT := $(addprefix $(OBJECT_DIRECTORY),$(OBJECTS_CLIENT))
 
 all: $(OBJECT_DIRECTORY) $(PROGRAM_SERVER) $(PROGRAM_CLIENT)
 debug: $(OBJECT_DIRECTORY) $(PROGRAM_SERVER) $(PROGRAM_CLIENT)
-test: $(OBJECT_DIRECTORY) $(PROGRAM_SERVER) $(PROGRAM_CLIENT)
 
 $(PROGRAM_SERVER): $(OBJECTS_SERVER)
 	$(LINK) $(OUT)$(PROGRAM_SERVER) $(OBJECTS_SERVER) $(LIBRARY_SERVER)
@@ -115,23 +106,10 @@ clean:
 	if [ -f $(PROGRAM_NAME_SERVER_DEBUG) ]; then rm --verbose $(PROGRAM_NAME_SERVER_DEBUG); fi;
 	if [ -f $(PROGRAM_NAME_CLIENT) ]; then rm --verbose $(PROGRAM_NAME_CLIENT); fi;
 	if [ -f $(PROGRAM_NAME_CLIENT_DEBUG) ]; then rm --verbose $(PROGRAM_NAME_CLIENT_DEBUG); fi;
-	if [ -f $(PACKAGE_NAME) ]; then rm --verbose $(PACKAGE_NAME); fi;
 
 install:
 	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) /usr/local/bin; chmod go-rwx /usr/bin/$(PROGRAM_NAME_SERVER); fi;
 	if [ -f $(PROGRAM_NAME_CLIENT) ]; then cp $(PROGRAM_NAME_CLIENT) /usr/local/bin; fi;
-
-package: $(PACKAGE_NAME_SERVER) $(PACKAGE_NAME_CLIENT)
-
-$(PACKAGE_NAME_SERVER):
-	mkdir -p dpkg-server/usr/bin
-	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) dpkg-server/usr/bin; chmod go-rwx dpkg-server/usr/bin/$(PROGRAM_NAME_SERVER); fi;
-	dpkg-deb --build dpkg-server/ $(PACKAGE_NAME_SERVER)
-
-$(PACKAGE_NAME_CLIENT):
-	mkdir -p dpkg-client/usr/bin
-	if [ -f $(PROGRAM_NAME_CLIENT) ]; then cp $(PROGRAM_NAME_CLIENT) dpkg-client/usr/bin; fi;
-	dpkg-deb --build dpkg-client/ $(PACKAGE_NAME_CLIENT)
 
 uninstall:
 	if [ -f /usr/local/bin/$(PROGRAM_NAME_SERVER) ]; then rm --verbose /usr/local/bin/$(PROGRAM_NAME_SERVER); fi;

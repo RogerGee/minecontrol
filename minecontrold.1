@@ -3,23 +3,26 @@
 minecontrold \- authoritative minecontrol server
 .SH SYNOPSIS
 .B minecontrold
-[\fB \-\-help\fR]
-[\fB \-\-version\fR]
+[\fB\-\-help\fR]
+[\fB\-\-version\fR]
 .SH DESCRIPTION
 Minecontrold provides a minecontrol server, which authoritatively manages Minecraft server (Java)
 processes. It provides administrative functions as well as extended functionality to
 Minecraft server processes.
 
-With no command-line options, minecontrold runs as a daemon and should have root privileges so 
+With no command-line options, minecontrold runs as a daemon and should have root privileges so that
 it can authenticate users. The minecontrol server listens on the local domain bound to the path
 @minecontrol in the Linux abstract namespace and on TCP port 44446. A client (see \fBminecontrol\fR(1))
-may connect to either address when available.
+may connect to either address when available and issue commands to the server using the minecontrol
+protocol.
 
 A minecontrol server runs one or more Minecraft servers for either an indefinite or set
-amount of time. The server authoritatively runs the Java process with the UID/GID of the logged
+amount of time. The server authoritatively runs the Java process with the UID/GID of a logged
 in user and manages Minecraft directories and property files. Minecontrold also provides a
 "command authority" system which reads Minecraft server output and issues Minecraft server commands
-via small programs which a user can supply.
+via small programs which a user can supply. For more specific information on minecontrol authority
+programs, see \fBminecontrol.exec\fR(5). The command authority also provides a means of getting a
+console interface where an authenticated user can issue Minecraft server commands manually.
 .SH OPTIONS
 .TP
 no options
@@ -31,8 +34,14 @@ display version information
 .B --help
 display brief help
 .SH FILES
-\fBminecontrol.init\fR(5), \fBminecontrol.exec\fR(5)
+.TP
+.I minecontrol.init
+per-server instance initialization file; see \fBminecontrol.init\fR(5) for more details
+.TP
+.I minecontrol.exec
+minecontrol executable program configuration file; see \fBminecontrol.exec\fR(5) for more
+details and for a guide to writing executable minecontrol programs
 .SH AUTHOR
-Written by Roger P. Gee.
+Written by Roger P. Gee <rpg11a@acu.edu>
 .SH SEE ALSO
 \fBminecontrol\fR(1), \fBminecontrol.init\fR(5), \fBminecontrol.exec\fR(5)

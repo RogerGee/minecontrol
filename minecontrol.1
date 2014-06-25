@@ -1,0 +1,379 @@
+.TH minecontrol 1
+.SH NAME
+minecontrol - minecontrol client program
+.SH SYNOPSIS
+.B minecontrol
+[\fIremote\-host\fR]
+[\fB\-p \fIport\fR|\fIdomain\-path\fR]
+[\fB\-\-help\fR]
+[\fB\-\-version\fR]
+.SH DESCRIPTION
+Minecontrol provides a minecontrol client, which may connect to either a local or
+remote minecontrol server. The minecontrol client implements the minecontrol protocol,
+which is described later in this document.
+
+With no command-line options, minecontrol attempts to connect to a local minecontrol
+server on the path @minecontrol within the Linux abstract namespace. If a host name
+is specified on the command-line, minecontrol will attempt to connect to a minecontrol
+server on the specified host using TCP port 44446.
+
+Once a connection has been established, the client behaves interactively, accepting
+commands on its standard input device. These commands mostly correspond to commands
+within the minecontrol protocol (described later in this document). The following
+describes the commands that can be issued at the minecontrol prompt:
+.TP
+\fBlogin\fR [\fIusername\fR]
+The client will accept user credentials and authenticate itself with the minecontrol
+server. This is required for the server to accept some commands. If no user name is
+specified, the client will prompt the user name, followed by the password.
+.TP
+.B logout
+The client will request that the minecontrol server deauthenticate the client.
+.TP
+\fBstart\fR [\fBcreate\fR \fIserver\-name\fR [\fIproperty key=property value\fR[\e...]]]
+The client will ask the minecontrol server to start a Minecraft server. If no arguments are specified
+on the command\-line, the client will prompt the user for the necessary information. If the
+token \fBcreate\fR appears first on the command\-line, the client will request that the 
+minecontrol server begin a new Minecraft server with the specified name, else a pre\-existing
+server will be started. A new server can be created only if the \fIserver-name\fR does not
+already exist for one of the user's other servers. Properties follow the server's name specification.
+These can be properties defined in the server.properties file used internally by the Minecraft server or
+properties for the minecontrol server to interpret. The server.properties file is overwritten with the
+specified properties given that minecontrol can interpret the property key as belonging to the server.properties
+file. Property keys and values may contain whitespace and are case\-insensitive. If specified on the command\-line,
+properties are separated by a backslash character; otherwise they are entered line\-by\-line on the interactive console,
+with an empty line denoting the end of input. The following lists properties used internally by the minecontrol 
+server which can be specified as a parameter to the start command:
+.RS
+.IP \-
+ServerTime=hours:
+Specifies the number of hours to run the Minecraft server before issuing the 'stop' command. If the value 0 is specifed
+the server will run for unlimited time.
+.IP \-
+ServerExec=command\-line:
+Specifies a command\-line to append to the \fBminecontrol.exec\fR(5) file. This command\-line will be executed by the minecontrol
+server as an authority program once the Minecraft server is running.
+.RE
+.RS
+The \fBstart\fR command requires that the client be authenticated using the \fBlogin\fR command.
+.RE
+.TP
+\fBstop\fR [\fIserver\-id\fR]
+The client will ask that the minecontrol server issue the 'stop' command to the specified Minecraft server. If the
+Minecraft server doesn't respond to the 'stop' command, the minecontrol server will most likely kill it after a default
+timeout period. The \fIserver\-id\fR is obtained from the output of a \fBstatus\fR command. If the \fIserver\-id\fR is not
+specified on the command\-line, the client will prompt the user. The \fBstop\fR command requires that the client be authenticated
+using the \fBlogin\fR command.
+.TP
+\fBstatus\fR
+The client will ask the minecontrol server for a print\-out of the status of running Minecraft server processes. This command may run for
+an unauthenticated client but the output may vary based on authentication status.
+.TP
+\fBextend\fR [\fIserver\-id\fR] [\fIhours\fR]
+The client will ask the minecontrol server to extend the time limit by the specified number of hours. If the time limit was currently
+unlimited, the time is effectively applied as the new time limit, else the time is added to the remaining time. If the command\-line
+arguments are not specified then the client prompts the user. This command requires that the client be authenticated using the \fBlogin\fR
+command.
+.TP
+\fBexec\fR [\fIserver\-id\fR] [\fIcommand\-line\fR]
+The client will ask the minecontrol server to run the specified command as an authority program on the specified Minecraft server. Every token
+following \fIserver\-id\fR is counted as part of the command line separated by whitespace. If an argument isn't supplied on the command\-line then
+the client will prompt the user. This command requires authentication using the \fBlogin\fR command.
+.TP
+\fBconsole\fR [\fIserver\-id\fR]
+The client will negotiate with the minecontrol server for console mode on the specified Minecraft server. The client will provide an asynchronous
+command\-line interface to the Minecraft server console. Issuing a 'quit' command will terminate console mode from the client end. If the Minecraft server
+ends, the client will automatically exit back to the normal prompt. The minecontrol server does not alter messages sent to a client in console
+mode (as it would normally do for authority programs). The messages are displayed top\-down with the most recent first. This command requires authentication
+using the \fBlogin\fR command.
+.TP
+\fBshutdown\fR
+The client will ask that the minecontrol server process terminate, effectively closing all Minecraft servers and client connections that it manages. The client
+must be authenticated as the root user using the \fBlogin\fR command.
+.TP
+\fBquit\fR
+The client will terminate and the connection with the minecontrol server will shutdown.
+.SH OPTIONS
+.TP
+.I remote\-host
+connect over a network to a minecontrol server running on the specified host; if omitted then try to connect to a minecontrol server running on the local domain
+.TP
+\fB-p \fIport\fR|\fIpath\fR
+use the specified port or domain-path when connecting to the minecontrol server; for domain paths, use a '@' prefix to imply that the path lies within the Linux
+abstract namespace (e.g. @minecontrol)
+.TP
+.B \-\-help
+show quick help
+.TP
+.B \-\-version
+show version information
+.SH PROTOCOL
+The protocol employed by a minecontrol server and client (the minecontrol protocol) is a simple line\-based protocol. Protocol messages are divided into two different
+classes: request and response. They both use the same syntax. The basic message syntax is as follows:
+.RS
+.PD 0
+\fBMINECONTROL\-PROTOCOL\fR [crlf]
+.P
+\fIcommand\-name\fR [crlf]
+.P
+\fIfield\fR: \fIvalue\fR [crlf]
+.P
+[ ... ] [crlf]
+.P
+[crlf]
+.RE
+.PD 1
+
+The sequence [crlf] refers to the ASCII 'CR' and 'LF' characters, which together terminate a line. A blank line signals the end of the message. A server will wait
+until the final empty line is sent before processing the entire message. The ellipses suggests that an unlimited number of field\-value pairs may be specified.
+
+Each message contains a \fIcommand\-name\fR on its own line. Each message class (request or response) determines the set of commands that can be used. A server sends
+response-class commands and receives request\-class commands and the client sends request\-class commands and receives response\-class commands. Each command has a set
+of expected field names. Every field value payload must be encoded in plain ASCII text. Some fields may employ RSA public\-private key cryptography (such as those
+that represent sensitive user information). Clients should employ the OpenSSL Crypto library to implement the cryptography (or something comparable). Minecontrol 
+servers employ a 1024 bit padded payload. As a field\-value, this is written as a stream of hexadecimal digit\-pairs (128 two\-character pairs) in ASCII separated by 
+whitespace.
+
+Negotiation begins when a client initiates a connection. This either occurs using a local domain connection or network TCP connection. The client issues the HELLO
+command, which may optionally include the client's name and version. The server then should issue a GREETINGS response, in which the server includes its name,
+version, and public\-key. The public key may be used to encrypt sensitive data fields.
+
+After the HELLO negotiation, the server accepts requests and issues one response per request. A client must always anticipate a response to its request and must
+only issue a new request after it has handled its previous request.
+
+The client can also negotiate for console mode. Console mode allows the client to issue commands indirectly to the Minecraft server process (as they could if they
+started up the Java process on a terminal device) and receive Minecraft server log messages. Unlike the normal synchronous negotiation between client and server,
+console mode causes the server to behave asynchronously. In other words, the server will issue response commands at any time during the duration of console mode.
+Both the client and server may end console-mode, which restores the previously defined synchronous communication mode.
+
+The following glossary describes the commands involved in these negotiations in more detail.
+
+\fICommand Glossary\fR:
+
+This glossary demonstrates and describes the various commands within the minecontrol protocol. The first section details the request commands issued by a client;
+the second details the response commands issued by a server.
+
+Request Commands:
+.RS
+.TP
+.B HELLO
+The \fBHELLO\fR command is used by a client to prove to a minecontrol server that it is a minecontrol client. If a client does not issue this command within a 
+default timeout period, the minecontrol server will shutdown the connection.
+
+Fields:
+.RS
+.TP
+\fBName: \fIclient\-name\fR
+The client's name that it chooses for itself
+.TP 
+\fBVersion: \fIclient\-version\fR
+The client's version number that it chooses for itself
+.RE
+.TP
+.B LOGIN
+The \fBLOGIN\fR command lets a client authenticate itself with the minecontrol server. The client provides a user name and encrypted password.
+
+Fields:
+.RS
+.TP
+\fBUsername: \fIuser\-name\fR
+The system username for the client's remote user
+.TP
+\fBPassword: \fIencrypted\-password\fR
+The encrypted password for the client's remote user; this will be a string of ASCII hexadecimal digit\-pairs; the client must use the key received from the minecontrol
+server's \fBGREETINGS\fR command
+.RE
+.TP
+.B LOGOUT
+The \fBLOGOUT\fR command deauthenticates a client, which prevents it from issuing commands that require authentication.
+
+Fields:
+.RS
+none
+.RE
+.TP
+.B START
+The \fBSTART\fR command is a request to the minecontrol server to begin a Minecraft server process. The generic command starts either a new or existing Minecraft
+server. The command can also specify server properties; these may be properties for the minecontrol server or the Minecraft server.
+
+Fields:
+.RS
+.TP
+\fBIsNew: true\fR|\fBfalse\fR
+Indicates whether the server (indicated by ServerName) should be created or if it is preexisting
+.TP
+\fBServerName: \fIname\fR
+A string that uniquely identifies the Minecraft server; this string corresponds to the directory in the file system that contains the Minecraft server files; normal
+rules for path names apply
+.TP
+[\fBServerTime: \fIhours\fR]
+Specify server time limit in hours (optional)
+.TP
+[\fIserver\-property\-name\fB: \fIserver\-property\-value\fR]
+Specify a Minecraft server property for the server.properties file (optional)
+.RE
+.TP
+.B STATUS
+The \fBSTATUS\fR command requests that the minecontrol server send a print\-out of the current status of the minecontrol server. The server already prepares a
+formatted message that may differ from version to version. The response to a \fBSTATUS\fR command will include a list of running Minecraft servers and the ID
+values that the minecontrol server has assigned to them.
+
+Fields:
+.RS
+none
+.RE
+.TP
+.B EXTEND
+The \fBEXTEND\fR command requests that the minecontrol server extend the recorded time limit for a specified Minecraft server.
+
+Fields:
+.RS
+.TP
+\fBServerID: \fIserver\-id\fR
+The ID value that identifies the Minecraft server; this value is obtained by a user from the response to a \fBSTATUS\fR command
+.TP
+\fBAmount: \fIhours\fR
+The number of hours to extend the Minecraft server
+.RE
+.TP
+.B EXEC
+The \fBEXEC\fR command requests that the minecontrol server run an authority program given by the specified command\-line for the specified Minecraft server
+
+Fields:
+.RS
+.TP
+\fBServerID: \fIserver\-id\fR
+The ID value that identifies the Minecraft server; this value is obtained by a user from the response to a \fBSTATUS\fR command
+.TP
+\fBCommand: \fIcommand\-line\fR
+The command\-line used to execute the new authority program
+.RE
+.TP
+.B STOP
+The \fBSTOP\fR command causes the minecontrol server to terminate the specified running Minecraft server.
+
+Fields:
+.RS
+.TP
+\fBServerID: \fIserver\-id\fR
+The ID value that identifies the Minecraft server; this value is obtained by a user from the response to a \fBSTATUS\fR command
+.RE
+.TP
+.B CONSOLE
+The \fBCONSOLE\fR command is sent by the client when it wishes to enter console mode on the specified server. Console mode causes the server to asynchronously
+send Minecraft server process output using the \fBCONSOLE\-MESSAGE\fR response. Once in console mode, the client may issue \fBCONSOLE\-COMMAND\fR commands.
+
+Fields:
+.RS
+.TP
+\fBServerID: \fIserver\-id\fR
+The ID value that identifies the Minecraft server; this value is obtained by a user from the response to a \fBSTATUS\fR command
+.RE
+.TP
+.B CONSOLE\-COMMAND
+The \fBCONSOLE\-COMMAND\fR command is used to send a console command to the remote Minecraft server process by means of the minecontrol server. This message can only
+be sent once the client has negotiated for console mode.
+
+Fields:
+.RS
+.TP
+\fBServerCommand: \fIcommand\-line\fR ...
+This field stores user input as a command\-line for the Minecraft server process; multiple \fBServerCommand\fR fields may be included in the \fBCONSOLE\-COMMAND\fR
+field payload.
+.RE
+.TP
+.B CONSOLE\-QUIT
+The \fBCONSOLE\-QUIT\fR command is used to end console mode by the client; this request should generate a \fBCONSOLE\-MESSAGE\fR response with status shutdown
+
+Fields:
+.RS
+none
+.RE
+.TP
+.B SHUTDOWN
+The \fBSHUTDOWN\fR command requests that the minecontrol server terminate; client must be authenticated as root to issue this command.
+
+Fields:
+.RS
+none
+.RE
+.RE
+
+Response Commands:
+.RS
+.TP
+.B GREETINGS
+The minecontrol server sends the \fBGREETINGS\fR command in response to a client \fBHELLO\fR command.
+
+Fields:
+.RS
+.TP
+\fBName: \fIserver\-name\fR
+The minecontrol server's name
+.TP
+\fBVersion: \fIserver\-version\fR
+The minecontrol server's version
+.TP
+\fBEncryptKey: \fIencrypt\-key\-public\-modulus\-hex\-string\fB|\fIencrypt\-key\-public\-exponent\-hex\-string\fR
+The encryption key for the client session
+.RE
+.TP
+.B MESSAGE
+The \fBMESSAGE\fR response indicates that the previous request was successful and contains a message payload to display.
+
+Fields:
+.RS
+.TP
+\fBPayload: \fImessage\fR
+The message payload
+.RE
+.TP
+.B ERROR
+The \fBERROR\fR response indicates that the previous request was unsuccessful and contains an error message payload to display.
+
+Fields:
+.RS
+.TP
+\fBPayload: \fIerror\-message\fR
+.RE
+.TP
+.B LIST\-MESSAGE
+The \fBLIST\-MESSAGE\fR response indicates that the previous request was successful and contains a list of message payloads to display.
+
+Fields:
+.RS
+.TP
+\fBItem: \fImessage\-item\fR
+Indicates a single message within the list of messages; this field is repeated multiple times for each list item
+.RE
+.TP
+.B LIST\-ERROR
+The \fBLIST\-ERROR\fR response indicates that the previous request was not successful and contains a list of error messages to display.
+
+Fields:
+.RS
+.TP
+\fBItem: \fIerror\-item\fR
+Indicates a single error message within the list of error messages; this field is repeated multiple times for each list item
+.RE
+.TP
+.B CONSOLE\-MESSAGE
+The \fBCONSOLE\-MESSAGE\fR response indicates a message delievered while the connection is in console mode. The message could be a console update, error message,
+or status flag of some kind.
+
+Fields:
+.RS
+.TP
+\fBStatus: established\fR|\fBfailed\fR|\fBmessage\fR|\fBerror\fR|\fBshutdown
+Indicates the kind of console message; established is sent after a successful \fBCONSOLE\fR request; failed is sent if the \fBCONSOLE\fR request is denied;
+message is sent when the Minecraft server outputs a line of text; error is sent if an error occurs after console mode is established; shutdown indicates that the
+server has shutdown console mode and that the client should cease console mode activities
+.TP
+[\fBPayload: \fImessage\-string\fR]
+If the status is 'message' or 'error' then this field exists and contains a message string
+.RE
+.RE
+.SH AUTHOR
+Written by Roger P. Gee <rpg11a@acu.edu>
+.SH SEE ALSO
+\fBminecontrold\fR(1), \fBminecontrol.init\fR(5), \fBminecontrol.exec\fR(5)

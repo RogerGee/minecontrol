@@ -1,5 +1,0 @@
-Package: minecontrold
-Version: 0.8
-Maintainer: Roger Gee <rpg11a@acu.edu>
-Description: A simple daemon for authorizing and managing Minecraft servers.
-Architecture: i386

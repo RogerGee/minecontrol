@@ -1,0 +1,62 @@
+.TH minecontrol.init 5
+.SH NAME
+minecontrol.init \- minecontrol Minecraft server initialization file
+.SH DESCRIPTION
+The \fI/etc/minecontrold/minecontrol.init\fR file controls properties of the Minecraft servers managed by a minecontrol server. This file does
+NOT apply settings for the minecontrol server (\fBminecontrold\fR(1)). The minecontrol server reads this file before starting any Minecraft
+server, therefore it may be changed at any time. This file is not required for the minecontrol server to run but allows behavior to be customized.
+
+The file format is line oriented, with a '#' symbol introducing a comment-line. Each line follows the format:
+.RS
+\fIproperty\fR=\fIkey\fR
+.RE
+Whitespace may be included as part of the property-name or property-key.
+.SH PROPERTIES
+.TP
+\fBexec\fR=\fI/path/to/java\fR
+The \fBexec\fR property tells the minecontrol server what program to launch in response to a \fBSTART\fR command (see \fBminecontrol\fR(1)). This should
+be the Java virtual machine program. This property defaults to \fB/usr/bin/java\fR if not specified.
+.TP
+\fBcmd\-line\fR=\fIargument\fR ...
+The \fBcmd\-line\fR property specifies the command\-line for the Minecraft server process. Each argument is separated by whitespace. The program name is not to be
+specified and is inserted by the minecontrol server using the \fBexec\fR property value. The default value for this property is a command-line recommended by the
+creators of Minecraft:
+.RS
+.RS
+\-Xmx1024M \-Xms1024M \-jar minecraft_server.jar nogui
+.RE
+.RE
+.RS
+Of course, you will need to point to the correct Minecraft server jarfile based on your system configuration. This default value will search relative to the
+directory /etc/minecontrold.
+.RE
+.TP
+\fBserver\-time\fR=\fIhours\fR
+The \fBserver\-time\fR property specifies the default time\-limit (in hours) for any Minecraft server process. When the time expires, the minecontrol server will shutdown the Minecraft server. The user may override this property if they specify it. The default
+time is 4 hours.
+.TP
+\fBmax\-servers\fR=\fInumber\fR
+The \fBmax\-servers\fR property specifies the maximum number of Minecraft server processes that the minecontrol server is to manage. The default value is a large 
+value permitting virtually unlimited Minecraft server processes.
+.TP
+\fBshutdown\-countdown\fR=\fIseconds\fR
+The \fBshutdown\-countdown\fR property specifies the number of seconds allowed for a Minecraft server process to terminate. If this time period expires before the
+Minecraft server process quits, then the server process is forcefully sure-killed. The default value is 30 seconds.
+.TP
+\fBalt\-home\fR=\fI/alternate/home/path\fR
+The \fBalt\-home\fR property specifies an alternate home directory for users who login to the minecontrol server. This means that Minecraft server data will be stored
+within a user-directory that is a subdirectory of the alt\-home path. By default, minecontrol uses the home directory specified in the system password file; thus
+the default value of this property is empty. If this property is specified, then the new user home directory becomes: $ALT_HOME/$USERNAME. The minecontrol server
+creates a minecraft directory within the user's home directory. Each server is stored as a subdirectory of this $HOME/$USER/minecraft directory.
+.TP
+\fBdefault\-\fIproperty\-name\fR=\fIproperty-value\fR
+Assigns a server.properties property with name \fIproperty-name\fR the value \fIproperty-value\fR. This action only takes place if the Minecraft server is being 
+created and if the user did not specify the property when creating the server.
+.TP
+\fBoverride\-\fIproperty\-name\fR=\fIproperty-value\fR
+Assigns a server.properties property with name \fIproperty-name\fR the value \fIproperty-value\fR. This action only takes place if the Minecraft server is being
+created. The property will always override whatever the user may have specified.
+.SH AUTHOR
+Written by Roger P. Gee <rpg11a@acu.edu>
+.SH SEE ALSO
+\fBminecontrol\fR(1), \fBminecontrold\fR(1), \fBminecontrol.exec\fR(5)

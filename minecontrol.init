@@ -17,7 +17,6 @@
 # this internally using the "exec" property). The default value is
 # seen below.
 #cmd-line=-Xmx1024M -Xms1024M -jar minecraft_server.jar nogui
-cmd-line=-Xmx1024M -Xms1024M -jar /mnt/tmpdisk/minecraft_server.1.7.9.jar nogui
 
 # Server time for each server process (default is 4 hours)
 #server-time=4
@@ -26,14 +25,20 @@ cmd-line=-Xmx1024M -Xms1024M -jar /mnt/tmpdisk/minecraft_server.1.7.9.jar nogui
 # (default is virtually unrestricted at 65535)
 #max-servers=1
 
+# Shutdown countdown specifies the time (in seconds) to wait for a 
+# Minecraft server to completely shutdown. If this time value expires
+# then the Minecraft server process is sent the sure kill signal. The
+# default value is 30 seconds.
+#shutdown-countdown=30
+
 # Alternate home specifies another directory root for users. By default,
 # minecontrol uses the normal home directory that the system provides
 # for an authenticated user (the one specified in the system password
-# file). If alt-home is specified, Minecraft servers are creating in
+# file). If alt-home is specified, Minecraft servers are created in
 # directories that are sub-directories of alt-home/user-name/minecraft/
-# as opposed to user-home-dir/minecraft/.
-#alt-home=/minecraft-data
-alt-home=/mnt/tmpdisk/
+# as opposed to user-home-dir/minecraft/. Though not requires, alt-home
+# should preferably be an absolute path.
+#alt-home=/minecraft-servers
 
 # You can specify default properties for the server.properties file;
 # these are only applied if the user is creating a new server and

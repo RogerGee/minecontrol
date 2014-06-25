@@ -6,6 +6,7 @@
 #include "socket.h"
 #include "mutex.h"
 #include <rlibrary/rdynarray.h>
+#include <rlibrary/rstream.h>
 
 namespace minecraft_controller
 {
@@ -33,6 +34,7 @@ namespace minecraft_controller
         gist_server_start,
         gist_server_start_bind,
         gist_server_chat,
+        gist_server_secret_chat,
         gist_server_shutdown,
         gist_player_id,
         gist_player_login,
@@ -118,13 +120,16 @@ namespace minecraft_controller
         enum execute_result
         {
             authority_exec_okay, // the executable program was successfully executed
+            authority_exec_okay_exited, // the executable program was successfully executed
             authority_exec_cannot_run, // the process couldn't fork or exec failed in some way other than not finding the program
             authority_exec_access_denied, // the user didn't have execute permission for the executable program
+            authority_exec_attr_fail, // the correct environment for the child process couldn't be applied
             authority_exec_not_program, // the specified file wasn't in an executable format
             authority_exec_program_not_found, // the executable program was not found in the proper directories
             authority_exec_too_many_arguments, // too many arguments supplied to program
             authority_exec_too_many_running, // too many executable programs are already running under the authority
-            authority_exec_not_ready // the authority object is not ready to run executable programs at this time (most likely the Minecraft server shutdown)
+            authority_exec_not_ready, // the authority object is not ready to run executable programs at this time (most likely the Minecraft server shutdown)
+            authority_exec_unspecified // the failure reason is undocumented
         };
 
         minecontrol_authority(const pipe& ioChannel,const rtypes::str& serverDirectory,const user_info& login);
@@ -132,12 +137,13 @@ namespace minecraft_controller
 
         console_result client_console_operation(socket& clientChannel); // blocks
         void issue_command(const rtypes::str& commandLine);
-        execute_result run_executable(rtypes::str commandLine);
+        execute_result run_executable(rtypes::str commandLine,int* ppid = NULL);
 
         bool is_responsive() const; // determine if server process is still responsive
+
+        static const char* const AUTHORITY_EXEC_FILE;
     private:
         static const char* const AUTHORITY_EXE_PATH;
-        static const char* const AUTHORITY_EXEC_FILE;
         static const int ALLOWED_CHILDREN = 10;
         static void* processing(void*); // thread handler for message processing/message output to logged-in client or child processes
 
@@ -155,6 +161,8 @@ namespace minecraft_controller
 
         static bool _prepareArgs(char* commandLine,const char** outProgram,const char** outArgv,int size);
     };
+
+    rtypes::rstream& operator <<(rtypes::rstream&,minecontrol_authority::execute_result);
 }
 
 #endif

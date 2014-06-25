@@ -69,6 +69,11 @@ void domain_socket_address::_prepareAddressString(char* buffer,size_type length)
 
 domain_socket::domain_socket()
 {
+    _addrbuf = new sockaddr_un;
+}
+domain_socket::~domain_socket()
+{
+    delete reinterpret_cast<sockaddr_un*>(_addrbuf);
 }
 void domain_socket::_openSocket(int& fd)
 {
@@ -81,4 +86,14 @@ void domain_socket::_createClientSocket(socket*& socknew)
 {
     // we just need this function to get the correct socket type
     socknew = new domain_socket;
+}
+void* domain_socket::_getAddressBuffer(size_type& length)
+{
+    length = sizeof(sockaddr_un);
+    return _addrbuf;
+}
+void domain_socket::_addressBufferToString(str& s) const
+{
+    // 'accept' doesn't set information for 'sockaddr_un'
+    s = "";
 }

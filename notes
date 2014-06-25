@@ -86,13 +86,13 @@ above and is available starting in version 0.6 BETA test.
 
       Message Format:
       (request; fields are optional)
-              MINECONTROL-PROTO <CRLF>
+              MINECONTROL-PROTOCOL <CRLF>
               COMMAND <CRLF>
               Field: value <CRLF>
               Field: value <CRLF> ...
               <CRLF>
       (response; fields are optional)
-              MINECONTROL-PROTO <CRLF>
+              MINECONTROL-PROTOCOL <CRLF>
               RESPONSE-COMMAND <CRLF>
               Field: value <CRLF>
               Field: value <CRLF> ...
@@ -117,12 +117,16 @@ sent. The client simply needs to shutdown the socket connection to cleanly disco
          ServerName: [dir-name]
          [optional fields follow]
          ServerTime: [hours]
+         Exec: [command-line]
          [minecraft server properties from server.properties]
          PropertyName: PropertyValue
         STATUS
         EXTEND
          ServerID: [integer number]
          Amount: [integer number (hours to extend)]
+        EXEC
+         ServerID: [integer number]
+         Command: [string: command line to execute]
         STOP
          ServerID: [integer number]
         CONSOLE             (begin console communications; client should begin a new thread that reads messages and writes to output screen;

@@ -134,7 +134,7 @@ void daemonize()
         // duplicate:
         //  log file to STDOUT and STDERR
         //  null to STDIN
-        fd = ::open(LOG_FILE,O_RDWR|O_CREAT|O_APPEND,S_IRUSR|S_IWUSR);
+        fd = ::open(LOG_FILE,O_WRONLY|O_CREAT|O_APPEND,S_IRUSR|S_IWUSR);
         fdNull = ::open("/dev/null",O_RDWR);
         if (fd == -1) {
             if (errno == EACCES)

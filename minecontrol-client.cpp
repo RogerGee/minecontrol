@@ -46,10 +46,11 @@ using namespace minecraft_controller;
 };
 /*static*/ controller_client* controller_client::accept_client(socket& ds)
 {
+    str addr;
     socket* pclientsock;
     // accept a client; stores a dynamically allocated socket object in pnew->sock; this will
     // be passed to the controller_client object which will later free it
-    if (ds.accept(pclientsock) == socket_accepted) {
+    if (ds.accept(pclientsock,addr) == socket_accepted) {
         controller_client* pnew = new controller_client(pclientsock);
         // send the client to a new thread for processing
         if (::pthread_create(&pnew->threadID,NULL,&controller_client::client_thread,pnew) != 0)
@@ -67,9 +68,10 @@ using namespace minecraft_controller;
             clients.push_back(pnew);
         clientsMutex.unlock();
         if (pclientsock->get_family() == socket_family_unix)
-            pnew->client_log(minecontrold::standardLog) << "accepted local client connection" << endline;
+            // there is no address information for incoming unix domain clients
+            pnew->client_log(minecontrold::standardLog) << "accepted local client connection"/*from" << addr */<< endline;
         else if (pclientsock->get_family() == socket_family_inet)
-            pnew->client_log(minecontrold::standardLog) << "accepted remote client connection" << endline;
+            pnew->client_log(minecontrold::standardLog) << "accepted remote client connection from " << addr << endline;
         else
             throw controller_client_error();
         return pnew;
@@ -138,18 +140,35 @@ controller_client::~controller_client()
 }
 bool controller_client::message_loop()
 {
+    str clientName, clientVersion;
     io_device& device = connection.get_device(); // should be a reference to this->sock
     minecontrol_message inMessage, outMessage;
-    // perform greeting negotiation: the client must send HELLO as it's first message;
+    // perform greeting negotiation: the client must send HELLO (within 10 seconds) as its first message;
     // anything else (including a malformed message) results in a shutdown
+    if ( !sock->select(10) ) { // wait 10 seconds for data to be sent from client
+        client_log(minecontrold::standardLog) << "client didn't send anything in timeout period" << endline;
+        return false;
+    }
     connection >> inMessage;
     if ( !inMessage.is_command("hello") ) {
         client_log(minecontrold::standardLog) << "client didn't say HELLO" << endline;
-        prepare_error() << "Protocol error: expected HELLO command to server" << flush;
-        connection << msgbuf.get_message();
         return false;
     }
-    client_log(minecontrold::standardLog) << "client said HELLO" << endline;
+    // get name and version info if available
+    while ( inMessage.get_field_key_stream().has_input() ) {
+        str k, v;
+        inMessage.get_field_key_stream() >> k;
+        inMessage.get_field_value_stream() >> v;
+        if (k=="name" && clientName.length()==0)
+            clientName = v;
+        else if (k=="version" && clientVersion.length()==0)
+            clientVersion = v;
+    }
+    if (clientName.length() == 0) {
+        clientName = "unknown-client";
+        clientVersion = "n/a";
+    }
+    client_log(minecontrold::standardLog) << "hello received from client '" << clientName << " version " << clientVersion << '\'' << endline;
     outMessage.assign_command("GREETINGS");
     outMessage.add_field("Name",minecontrold::get_server_name());
     outMessage.add_field("Version",minecontrold::get_server_version());
@@ -421,10 +440,84 @@ bool controller_client::command_extend(rstream& kstream,rstream& vstream)
     minecraft_server_manager::attach_server(&servers[0],servers.size());
     return true;
 }
-bool controller_client::command_exec(rstream&,rstream&)
+bool controller_client::command_exec(rstream& kstream,rstream& vstream)
 {
-
-    return false;
+    str key;
+    uint32 id = -1;
+    str command;
+    dynamic_array<server_handle*> servers;
+    minecraft_server_manager::auth_lookup_result result;
+    // read off needed property
+    while (kstream >> key) {
+        if (key == "serverid") {
+            vstream >> id;
+            if (!vstream.get_input_success() || id==0) {
+                prepare_error() << "Bad id value specified; expected a positive non-zero integer" << flush;
+                connection << msgbuf.get_message();
+                return false;
+            }
+        }
+        else if (key == "command") {
+            vstream >> command;
+            if (!vstream.get_input_success() || command.length()==0) {
+                prepare_error() << "Bad or empty command value specified; expected a non-empty string" << flush;
+                connection << msgbuf.get_message();
+                return false;
+            }
+        }
+    }
+    if (id == uint32(-1)) {
+        prepare_error() << "No running server id specified" << flush;
+        connection << msgbuf.get_message();
+        return false;
+    }
+    if (command.length() == 0) {
+        prepare_error() << "No command specified" << flush;
+        connection << msgbuf.get_message();
+        return false;
+    }
+    // ask the server manager for handles to running servers that the user can access; we need to make sure no blocking calls happen here (shouldn't be a problem)
+    if ((result = minecraft_server_manager::lookup_auth_servers(userInfo,servers)) == minecraft_server_manager::auth_lookup_none) {
+        prepare_error() << "There are no server processes running at this time" << flush;
+        connection << msgbuf.get_message();
+        return false;
+    }
+    else if (result == minecraft_server_manager::auth_lookup_no_owned) {
+        prepare_error() << "User does not have permission to access any of the running servers" << flush;
+        connection << msgbuf.get_message();
+        return false;
+    }
+    // search through accessible servers; find the one with the specified id
+    size_type i = 0;
+    while (i<servers.size() && servers[i]->pserver->get_internal_id()!=id)
+        ++i;
+    if (i >= servers.size()) {
+        // return regulation of minecraft server(s) to the manager
+        minecraft_server_manager::attach_server(&servers[0],servers.size());
+        prepare_error() << "No owned server was found with id=" << id << "; user may not have permission to modify it" << flush;
+        connection << msgbuf.get_message();
+        return false;
+    }
+    minecontrol_authority* pauth;
+    minecontrol_authority::execute_result res = minecontrol_authority::authority_exec_unspecified;
+    pauth = servers[i]->pserver->get_authority();
+    if (pauth != NULL) {
+        int pid;
+        res = pauth->run_executable(command,&pid);
+        prepare_message() << res << flush;
+        connection << msgbuf.get_message();
+        minecontrold::standardLog << res;
+        if (pid != -1)
+            minecontrold::standardLog << " (client-exec: " << "process=" << pid << ", cmd=" << command << ')';
+        minecontrold::standardLog << endline;
+    }
+    else {
+        prepare_error() << "The server's authority management has shutdown; this may be a bug in minecontrold" << flush;
+        connection << msgbuf.get_message();
+    }
+    // return regulation of minecraft server(s) to the manager
+    minecraft_server_manager::attach_server(&servers[0],servers.size());
+    return res==minecontrol_authority::authority_exec_okay || res==minecontrol_authority::authority_exec_okay_exited;
 }
 bool controller_client::command_stop(rstream& kstream,rstream& vstream)
 {
@@ -518,13 +611,19 @@ bool controller_client::command_console(rstream& kstream,rstream& vstream)
         return false;
     }
     minecontrol_authority* pauth;
-    minecontrol_authority::console_result res;
-    client_log(minecontrold::standardLog) << "client entered console mode on server '" << servers[i]->pserver->get_internal_name()
-                                          << "' with id=" << servers[i]->pserver->get_internal_id() << endline;
+    minecontrol_authority::console_result res = minecontrol_authority::console_no_channel;
     pauth = servers[i]->pserver->get_authority();
-    res = pauth->client_console_operation(*sock);
-    client_log(minecontrold::standardLog) << "client exited console mode on server '" << servers[i]->pserver->get_internal_name()
-                                          << "' with id=" << servers[i]->pserver->get_internal_id() << endline;
+    if (pauth != NULL) {
+        client_log(minecontrold::standardLog) << "client entered console mode on server '" << servers[i]->pserver->get_internal_name()
+                                              << "' with id=" << servers[i]->pserver->get_internal_id() << endline;
+        res = pauth->client_console_operation(*sock);
+        client_log(minecontrold::standardLog) << "client exited console mode on server '" << servers[i]->pserver->get_internal_name()
+                                              << "' with id=" << servers[i]->pserver->get_internal_id() << endline;
+    }
+    else {
+        prepare_error() << "The server's authority management has shutdown; this may be a bug in minecontrold" << flush;
+        connection << msgbuf.get_message();
+    }
     // return regulation of server(s) to the manager
     minecraft_server_manager::attach_server(&servers[0],servers.size());
     return res != minecontrol_authority::console_no_channel;

@@ -12,8 +12,8 @@
 #include <pwd.h>
 #include <errno.h>
 #include <rlibrary/rfilename.h>
-#include <rlibrary/rfile.h>
 #include <rlibrary/rutility.h>
+#include <rlibrary/rfile.h>
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -83,6 +83,10 @@ minecraft_server_info::_prop_process_flag minecraft_server_info::_process_ex_pro
             return _prop_process_bad_value;
         // assume server time was in hours; compute seconds
         serverTime *= 3600;
+        return _prop_process_success;
+    }
+    else if (key == "serverexec") { // string: program names separated by colons (:) to pass to the minecontrol authority (by creating minecontrol.exec file)
+        serverExec = value;
         return _prop_process_success;
     }
     return _prop_process_bad_key;
@@ -251,6 +255,7 @@ minecraft_server::minecraft_server()
     _elapsed = 0;
     _uid = -1;
     _gid = -1;
+    _fderr = -1;
     // reload global settings in case they have changed
     _globals.read_from_file();
 }
@@ -281,9 +286,25 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     }
     else
         mcraftdir = info.userInfo.homeDirectory;
-    // compute the server working directory (as a subdirectory of the home directory and the minecraft user directory)
+    // compute the server working directory (as a subdirectory of the home directory and the minecraft
+    // user directory); create the directory (and its parent directories where able) and change its owner
+    // to the authenticated user
     mcraftdir += MINECRAFT_USER_DIRECTORY;
     mcraftdir += info.internalName;
+    if ( !mcraftdir.exists() ) {
+        if (!info.isNew)
+            return mcraft_start_server_does_not_exist;
+        if (!mcraftdir.make(true) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1) // create sub-directories if need be
+            return mcraft_start_server_filesystem_error;
+    }
+    else if (info.isNew)
+        return mcraft_start_server_already_exists;
+    // create or open existing error file; we'll send child process error output here; we need the descriptor in
+    // the parent process so we'll have to change its ownership to the authenticated user
+    _fderr = open((mcraftdir.get_full_name()+"/errors").c_str(),O_WRONLY|O_CREAT|O_APPEND,0660);
+    if (_fderr==-1 || fchown(_fderr,info.userInfo.uid,info.userInfo.gid)==-1)
+        return mcraft_start_server_filesystem_error;
+    _setup_error_file(info.internalName);
     // create new pipe for communication; this needs to be done before the fork
     _iochannel.open();
     pid = ::fork();
@@ -298,19 +319,13 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         // change the process umask
         ::umask(S_IWGRP | S_IWOTH);
         // change working directory to directory for minecraft server
-        if ( !mcraftdir.exists() ) {
-            if (!info.isNew)
-                _exit((int)mcraft_start_server_does_not_exist);
-            if ( !mcraftdir.make(true) ) // create sub-directories if need be
-                _exit((int)mcraft_start_server_filesystem_error);
-        }
-        else if (info.isNew)
-            _exit((int)mcraft_start_server_already_exists);
         if (::chdir( mcraftdir.get_full_name().c_str() ) != 0)
             _exit((int)mcraft_start_server_filesystem_error);
         // create the server.properties file using the properties in info
         if ( !_create_server_properties_file(info) )
             _exit((int)mcraft_start_server_filesystem_error);
+        // check any extended server info options that depend on this process's state
+        _check_extended_options_child(info);
         // prepare execve arguments
         int top = 0;
         char* pstr = _globals.arguments();
@@ -326,7 +341,8 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         args[top++] = NULL;
         // duplicate open ends of io channel pipe as standard IO
         // for this process; (this will close the descriptors)
-        _iochannel.standard_duplicate();
+        _iochannel.standard_duplicate(); // setup stdout and stdin
+        duplicate_error_file(); // setup stderr
         // close all file descriptors not needed by the
         // child process; note that this is safe since
 	// the fork closed any other threads running
@@ -350,9 +366,10 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         _iochannel.read(message,1); // just read one byte so as to not interfere too much with our future snooping
         if (_iochannel.get_last_operation_status()==no_input // child wasn't able to start properly
             || _iochannel.get_last_operation_status()==bad_read) {
-            // close the pipe and reap the child process
+            // close the pipe, close the error file, and reap the child process
             int wstatus;
             _iochannel.close();
+            _close_error_file(info.internalName);
             if (::waitpid(pid,&wstatus,0) != pid) // this should happen sooner rather than never...
                 throw minecraft_server_error();
             if ( WIFEXITED(wstatus) )
@@ -409,6 +426,10 @@ void minecraft_server::extend_time_limit(uint32 hoursMore)
         _iochannel.write(msg.get_device());
     }
 }
+bool minecraft_server::duplicate_error_file() const
+{
+    return _fderr!=-1 && dup2(_fderr,STDERR_FILENO)==STDERR_FILENO;
+}
 minecraft_server::minecraft_server_exit_condition minecraft_server::end()
 {
     minecraft_server_exit_condition status;
@@ -456,6 +477,7 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
         }
         // put every "per-server" attribute back in an invalid state
         _iochannel.close();
+        _close_error_file(_internalName);
         _internalName.clear();
         _idSetProtect.lock();
         _idSet.remove(_internalID);
@@ -562,9 +584,9 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
 bool minecraft_server::_create_server_properties_file(minecraft_server_info& info)
 {
     file props("server.properties",file_create_always);
-    file_stream fstream(props);
-    if ( !fstream.get_device().is_valid_context() ) // couldn't open file
+    if ( !props.is_valid_context() ) // couldn't open file
         return false;
+    file_stream fstream(props);
     // apply default and/or override properties
     _globals.apply_properties(info);
     // write props to properties file
@@ -576,6 +598,57 @@ void minecraft_server::_check_extended_options(const minecraft_server_info& info
     if (info.serverTime != uint64(-1))
         _maxTime = info.serverTime;
 }
+void minecraft_server::_check_extended_options_child(const minecraft_server_info& info)
+{
+    if (info.serverExec.length() > 0) {
+        file minecontrolExec(minecontrol_authority::AUTHORITY_EXEC_FILE,file_open_append);
+        if ( minecontrolExec.is_valid_context() ) {
+            str program;
+            size_type i = 0;
+            while (true) {
+                if (i>=info.serverExec.length() || info.serverExec[i]==':') {
+                    if (program.length() > 0) {
+                        program.push_back('\n');
+                        minecontrolExec.write(program);
+                        program.clear();
+                    }
+                    ++i;
+                    if (i >= info.serverExec.length())
+                        break;
+                    continue;
+                }
+                program.push_back(info.serverExec[i++]);
+            }
+        }
+    }
+}
+void minecraft_server::_setup_error_file(const str& name)
+{
+    stringstream ss("BEGIN error log: ");
+    ss << name;
+    for (size_type i = ss.get_device().length();i<80;++i)
+        ss.put('-');
+    ss << newline;
+    write(_fderr,ss.get_device().c_str(),ss.get_device().length());
+}
+void minecraft_server::_close_error_file(const str& name)
+{
+    if (_fderr != -1) {
+        str s;
+        str part = name;
+        part += ": error log END";
+        if (part.length() < 80) {
+            size_type len = 80 - part.length();
+            for (size_type i = 0;i<len;++i)
+                s.push_back('-');
+        }
+        s += part;
+        s.push_back('\n');
+        write(_fderr,s.c_str(),s.length());
+        close(_fderr);
+        _fderr = -1;
+    }
+}
 
 rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::minecraft_server_start_condition condition)
 {
@@ -585,17 +658,19 @@ rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::min
         return stream << "Minecraft server started successfully";
     stream << "Minecraft server start fail: ";
     if (condition == minecraft_server::mcraft_start_server_filesystem_error)
-        stream << "the filesystem could not be set up correctly";
+        stream << "the filesystem could not be set up correctly; check the user home directory and its permissions";
     else if (condition == minecraft_server::mcraft_start_server_too_many_servers)
         stream << "too many servers are running: no more are allowed to be started at this time";
     else if (condition == minecraft_server::mcraft_start_server_permissions_fail)
         stream << "the minecraft server process could not take on the needed credentials";
     else if (condition == minecraft_server::mcraft_start_server_does_not_exist)
-        stream << "the specified server internal name did not exist";
+        stream << "the specified server did not exist in the expected location on disk";
     else if (condition == minecraft_server::mcraft_start_server_already_exists)
         stream << "a new server could not be started because another server exists with the same name";
     else if (condition == minecraft_server::mcraft_start_server_process_fail)
-        stream << "the child minecraft server process could not be executed";
+        stream << "the minecraft server process could not be executed";
+    else if (condition == minecraft_server::mcraft_start_java_process_fail)
+        stream << "the java process exited with an error code; check to make sure its command-line is correct";
     else
         stream << "an unspecified error occurred";
     return stream;

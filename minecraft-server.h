@@ -27,6 +27,7 @@ namespace minecraft_controller
            implementing a feature provided by this network server program; some properties may
            override default settings for a 'minecraft_server' read from the minecontrol.init file */
         rtypes::uint64 serverTime; // number of seconds of allowed server run-time; (uint64)-1 means "not set"
+        rtypes::str serverExec; // default authority programs to execute upon startup; separated by colons (:)
 
         /* attempts to read server properties from specified string buffer; the properties
            should be formatted like so: key=value\n...; any errors are written in a human
@@ -103,6 +104,8 @@ namespace minecraft_controller
         enum minecraft_server_start_condition
         {
             mcraft_start_success = 0, // the server process was started successfully
+            mcraft_start_java_process_fail = 1, // java process returns this when it fails most of the time
+            // start these at higher values so that they don't mess with the exit codes from the Java process (hopefully)
             mcraft_start_server_too_many_servers = 50, // the server process was not allowed to start; too many servers are running on the machine
             mcraft_start_server_filesystem_error, // the server couldn't set up the filesystem for the minecraft server
             mcraft_start_server_permissions_fail, // the server process couldn't set correct permissions for minecraft server process
@@ -126,7 +129,7 @@ namespace minecraft_controller
             mcraft_exit_request, // the server process exited due to a direct request from this program
             mcraft_exit_killed, // the server process was killed from this program
             mcraft_exit_unknown, // the server process was terminated but in an unknown or unspecified manner
-            mcraft_server_not_running // the server didn't exit because it wasn't running
+            mcraft_server_not_running // the server didn't exit because it was never running
         };
 
         minecraft_server();
@@ -146,6 +149,11 @@ namespace minecraft_controller
         { return _authority; }
         const minecontrol_authority* get_authority() const
         { return _authority; }
+
+        // duplicates the error file as the calling process's
+        // stderr; this closes the preexisting stderr; should
+        // be called by child processes
+        bool duplicate_error_file() const;
 
         // requests that the server shutdown by issuing "stop"
         // to the server's standard input; "end" should be called
@@ -187,10 +195,14 @@ namespace minecraft_controller
         rtypes::uint64 _maxTime;
         rtypes::uint64 _elapsed;
         int _uid, _gid;
+        int _fderr;
 
         // helpers
         bool _create_server_properties_file(minecraft_server_info&);
-        void _check_extended_options(const minecraft_server_info&);
+        void _check_extended_options(const minecraft_server_info&); // options that need to be applied in this program
+        void _check_extended_options_child(const minecraft_server_info&); // options that need to be applied in child process
+        void _setup_error_file(const rtypes::str& name);
+        void _close_error_file(const rtypes::str& name);
     };
 
     rtypes::rstream& operator <<(rtypes::rstream&,minecraft_server::minecraft_server_start_condition);

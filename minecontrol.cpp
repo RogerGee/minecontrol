@@ -15,10 +15,11 @@
 using namespace rtypes;
 using namespace minecraft_controller;
 
-// constants
-static const char* const DOMAIN_NAME = "@minecontrol";
-static const char* const SERVICE_PORT = "44446";
+// constants (well, some are mutable but they function like constants)
+static const char* DOMAIN_NAME = "@minecontrol";
+static const char* SERVICE_PORT = "44446";
 static const char* PROGRAM_NAME;
+static const char* const CLIENT_NAME = "minecontrol-standard";
 static const char* const PROGRAM_VERSION = "0.8 (BETA)";
 static const char PROMPT_MAIN = '#';
 static const char PROMPT_CONSOLE = '$';
@@ -76,6 +77,8 @@ session_state::~session_state()
 static void sigpipe_handler(int); // handle SIGPIPE
 
 // helpers
+static bool check_long_option(const char* option,int& exitCode);
+static bool check_short_option(const char* option,const char* argument,int& exitCode);
 static void echo(bool onState);
 static bool check_status(io_device& device);
 static bool request_response_sequence(session_state& session);
@@ -89,6 +92,7 @@ static void login(session_state& session); // these commands provide an interact
 static void logout(session_state& session);
 static void start(session_state& session);
 static void extend(session_state& session);
+static void exec(session_state& session);
 static void console(session_state& session);
 static void stop(session_state& session);
 static void any_command(const generic_string& command,session_state& session); // these commands do not provide an interactive mode
@@ -102,17 +106,42 @@ int main(int argc,const char* argv[])
         return 1;
     }
 
+    // process options; give them precedence over non-option command-line arguments
+    int top = 0;
+    const char* mainArgs[20];
+    for (int i = 1;i < argc;++i) {
+        if (argv[i][0] == '-') {
+            int exitCode;
+            if (argv[i][1] == '-') {
+                // this is a long option: pass the entire argument minus the "--"
+                if ( !check_long_option(argv[i]+2,exitCode) )
+                    return exitCode;
+            }
+            else if (i+1<argc && argv[i][1]!=0) {
+                if ( !check_short_option(argv[i]+1,argv[i+1],exitCode) )
+                    return exitCode;
+                ++i;
+            }
+            else {
+                errConsole << PROGRAM_NAME << ": error: expected argument after '" << argv[i] << "' option\n";
+                return 1;
+            }
+        }
+        else
+            mainArgs[top++] = argv[i];
+    }
+
     session_state session;
     // setup session with the correct stream and io device
-    if (argc > 1) { // use network socket        
+    if (top > 0) { // use network socket
         session.psocket = new network_socket;
-        session.paddress = new network_socket_address(argv[1],SERVICE_PORT);
+        session.paddress = new network_socket_address(mainArgs[0],SERVICE_PORT);
     }
     else { // use domain socket
         session.psocket = new domain_socket;
         session.paddress = new domain_socket_address(DOMAIN_NAME);
     }
-
+    
     // create socket and attempt to establish connection with minecontrol server
     session.psocket->open();
     if ( !session.psocket->connect(*session.paddress) ) {
@@ -152,6 +181,8 @@ int main(int argc,const char* argv[])
             start(session);
         else if (command == "extend")
             extend(session);
+        else if (command == "exec")
+            exec(session);
         else if (command == "console")
             console(session);
         else if (command == "stop")
@@ -163,6 +194,55 @@ int main(int argc,const char* argv[])
     };
 
     return 0;
+}
+
+bool check_long_option(const char* option,int& exitCode)
+{
+    exitCode = 0;
+    if ( rutil_strcmp(option,"help") ) {
+        stdConsole << "usage: " << PROGRAM_NAME << 
+" [remote-host] [-p port|path] [--version] [--help]\n\
+\n\
+The following commands can be run interactively:\n\
+ login - authenticate with minecontrol server\n\
+ logout - deauthenticate with minecontrol server\n\
+ start - run remote Minecraft server\n\
+ stop - terminate remote Minecraft server\n\
+ extend - extend time limit for Minecraft server\n\
+ exec - run authority program\n\
+ console - enter Minecraft server console mode\n\
+ shutdown - terminate remote minecontrol server\n\
+ quit - exit this program\n\
+\n\
+Run 'man minecontrol(1)' for more information.\n\
+Report bugs to Roger Gee <rpg11a@acu.edu>" << endline;
+        return false;
+    }
+    else if ( rutil_strcmp(option,"version") ) {
+        stdConsole << PROGRAM_NAME << " version " << PROGRAM_VERSION << newline;
+        return false;
+    }
+    else {
+        errConsole << PROGRAM_NAME << ": error: unrecognized option '" << option << "'\n";
+        exitCode = 1;
+        return false;
+    }
+    return true;
+}
+
+bool check_short_option(const char* option,const char* argument,int& exitCode)
+{
+    if (*option == 'p') {
+        // change port and path (only one will be used)
+        DOMAIN_NAME = argument;
+        SERVICE_PORT = argument;
+    }
+    else {
+        errConsole << PROGRAM_NAME << ": error: unrecognized option '" << option << "'\n";
+        exitCode = 1;
+        return false;
+    }
+    return true;
 }
 
 void sigpipe_handler(int signal)
@@ -315,7 +395,7 @@ bool hello_exchange(session_state& session)
     str key;
     minecontrol_message res;
     minecontrol_message req("HELLO");
-    req.add_field("Name",PROGRAM_NAME);
+    req.add_field("Name",CLIENT_NAME);
     req.add_field("Version",PROGRAM_VERSION);
     session.connectStream << req;
     session.connectStream >> res;
@@ -436,8 +516,38 @@ void extend(session_state& session)
     request_response_sequence(session);
 }
 
+void exec(session_state& session)
+{
+    str tokA, tokB;
+    session.inputStream >> tokA;
+    if (tokA.length() == 0) {
+        stdConsole << "Enter ID of running server: ";
+        stdConsole >> tokA;
+    }
+    while ( session.inputStream.has_input() ) {
+        str item;
+        session.inputStream >> item;
+        if (tokB.length() > 0) {
+            tokB.push_back(' ');
+            tokB += item;
+        }
+        else
+            tokB += item;
+    }
+    if (tokB.length() == 0) {
+        stdConsole << "Enter command: ";
+        stdConsole.getline(tokB);
+    }
+    session.request.begin("EXEC");
+    session.request.enqueue_field_name("ServerID");
+    session.request.enqueue_field_name("Command");
+    session.request << tokA << newline << tokB << flush;
+    request_response_sequence(session);
+}
+
 static void* console_output_thread(void* pparam)
 { // handle output for the thread
+    static const int BUFFER_MAX = 1024;
     session_state& session = *reinterpret_cast<session_state*>(pparam);
     socket_stream connectStream(session.connectStream); // create a new stream to prevent race conditions
     minecontrol_message serverMessage;
@@ -454,11 +564,11 @@ static void* console_output_thread(void* pparam)
                 }
                 else if (key=="payload" && value.length()>0) {
                     int y, x, cnt;
-                    chtype currentLine[480];
+                    chtype currentLine[BUFFER_MAX];
                     session.mtx.lock();
                     getyx(stdscr,y,x);
                     move(0,0);
-                    cnt = inchnstr(currentLine,480);
+                    cnt = inchnstr(currentLine,BUFFER_MAX);
                     for (int i = 0;i < cnt;++i)
                         addch(' ');
                     scrl(-1);
@@ -528,7 +638,7 @@ void console(session_state& session)
     str cache;
     bool doCache = false; // cache commands to send as a batch later on
     minecontrol_message request("CONSOLE-COMMAND");
-    static const int BUFFER_MAX = 480;
+    static const int BUFFER_MAX = 1024;
     char buffer[BUFFER_MAX];
     int top = 0;
     session.control = true;
@@ -538,8 +648,8 @@ void console(session_state& session)
         if ((ch = getch()) == ERR) {
             /* sleeping here is of the utmost importance; it
                gives the other thread a chance to catch up */
-            usleep(500);
             session.mtx.unlock();
+            usleep(500);
             continue;
         }
         if ((ch&A_CHARTEXT)=='\n' || top==BUFFER_MAX-1) {

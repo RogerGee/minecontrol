@@ -25,12 +25,17 @@ namespace minecraft_controller
     {
     public:
         domain_socket();
+        ~domain_socket();
     private:
+        void* _addrbuf;
+
         // implement virtual socket interface
         virtual void _openSocket(int& fd);
         virtual void _createClientSocket(socket*& socknew);
         virtual socket_family _getFamily() const
         { return socket_family_unix; }
+        virtual void* _getAddressBuffer(rtypes::size_type& length);
+        virtual void _addressBufferToString(rtypes::str& s) const;
     };
 }
 

@@ -27,12 +27,17 @@ namespace minecraft_controller
     {
     public:
         network_socket();
+        ~network_socket();
     private:
+        void* _addrbuf;
+
         // implement virtual socket interface
         virtual void _openSocket(int& fd);
         virtual void _createClientSocket(socket*& socknew);
         virtual socket_family _getFamily() const
         { return socket_family_inet; }
+        virtual void* _getAddressBuffer(rtypes::size_type& length);
+        virtual void _addressBufferToString(rtypes::str& s) const;
     };
 
     class network_socket_stream : public rtypes::rstream,
