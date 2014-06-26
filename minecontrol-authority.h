@@ -43,7 +43,8 @@ namespace minecraft_controller
         gist_player_losecon_error,
         gist_player_leave,
         gist_player_chat,
-        gist_player_achievement
+        gist_player_achievement,
+        gist_player_teleported
     };
 
     /* represents a message printed on the minecraft server process's standard output channel */

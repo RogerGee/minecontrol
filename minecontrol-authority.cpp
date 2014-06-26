@@ -30,6 +30,7 @@ using namespace minecraft_controller;
         gist_player_chat,
         gist_server_chat,
         gist_server_secret_chat,
+        gist_player_teleported,
         gist_player_login,
         gist_player_id,
         gist_player_join,
@@ -46,6 +47,7 @@ using namespace minecraft_controller;
         "<%S> %S", // gist_player_chat
         "[%S] %S", // gist_server_chat
         "You whisper to %S: %S", // gist_server_secret_chat
+        "Teleported %S to %S,%S,%S", // gist_player_teleported
         "%S[/%S] logged in with entity id %S at (%S, %S, %S)", // gist_player_login
         "UUID of player %S is %S", // gist_player_id
         "%S joined the game", // gist_player_join
@@ -153,6 +155,8 @@ str minecraft_server_message::get_gist_string() const
         return "chat";
     case gist_player_achievement:
         return "achievement";
+    case gist_player_teleported:
+        return "player-teleport";
     default:
         return DEFAULT;
     }
