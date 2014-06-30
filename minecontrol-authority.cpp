@@ -525,7 +525,7 @@ void* minecontrol_authority::processing(void* pparam)
                 ss << newline;
                 for (int i = 0;i < ALLOWED_CHILDREN;++i) {
                     if (object->_childID[i] != -1) {
-                        // send parsed message to child process
+                        // send parsed message to child process (this pipe write may fail if the child isn't reading our messages)
                         object->_childStdIn[i].write(ss.get_device());
                         // wait poll any child process so that they can be reaped as soon as possible; I don't
                         // like the idea of a zombie apocalypse happening (at least at the moment)

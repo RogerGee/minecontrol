@@ -1,4 +1,10 @@
-/* minecontrol-api.h - minecontrol authority program library core API */
+/* minecontrol-api.h - 
+   provides the minecontrol authority program library core API:
+    - general-purpose IO functions for Minecraft server commands (output)
+    and minecontrol server messages (input)
+    - higher-level geometric functions and input tracking
+    - thread safe
+*/
 #ifndef MINECONTROL_API_H
 #define MINECONTROL_API_H
 
@@ -6,33 +12,37 @@
 #define MAX_BUFFER 1024
 #define MAX_MESSAGE_TOKENS 512
 #define MAX_COMMAND_TOKENS 64
-#define MAX_PATTERN 24
+#define MAX_ASYNC_INSTANCES 10
 
 /*************************************************************
  * CONSTANTS *************************************************
  *************************************************************
- *************************************************************
  */
 
-/* token constants */
+/* command token constants */
 typedef enum {
-    t_invalid, /* used by implementation */
-    t_string = 's',
+    t_invalid = 0,
+    _t_first = 's',
+    t_string = _t_first,
     t_integer = 'i',
     t_float = 'f',
+    t_coord = 'c',
+    t_coordf = 'o',
     t_message = 'm',
-    t_command = 'c',
+    t_command = 'a',
     t_block = 'b',
     t_datavalue = 'd',
-    t_blockhandling = 'h'
-
+    t_blockhandling = 'h',
+    t_entity = 'e',
+    _t_last = t_entity
 } token_kind;
 
 /* message constants */
 typedef enum {
-    m_invalid = -1, /* used by implementation */
-    m_eoi = -2, /* used by implementation */
-    m_chat = 0,
+    m_invalid = -1,
+    m_eoi = -2,
+    _m_first = 0,
+    m_chat = _m_first,
     m_serverchat,
     m_serverstart,
     m_serverbind,
@@ -44,7 +54,8 @@ typedef enum {
     m_playerdropped,
     m_playerleave,
     m_playerachieve,
-    m_unknown
+    m_unknown,
+    _m_last = m_unknown
 } message_kind;
 #define MESSAGE_PLAYER_CHAT "chat"
 #define MESSAGE_SERVER_CHAT "server-chat"
@@ -63,17 +74,38 @@ extern const char* const MESSAGE_KINDS[];
 
 /* command format constants */
 typedef enum {
-    c_invalid = -1, /* used by implementation */
+    c_invalid = -1,
+    _c_first,
+    c_any = _c_first,
     c_say,
     c_setblock,
+    c_setblock_ex,
+    c_setblock_coord,
+    c_setblock_coord_ex,
     c_summon,
-    c_teleport
+    c_summon_float,
+    c_summon_coord,
+    c_summon_coord_float,
+    c_teleport,
+    c_teleport_float,
+    c_teleport_coord,
+    c_teleport_coord_float,
+    _c_last = c_teleport_coord_float
 } command_kind;
-#define COMMAND_GENERIC "%c"
+#define COMMAND_GENERIC "%a"
 #define COMMAND_SAY "say %s"
-#define COMMAND_SETBLOCK "setblock %i %i %i %b [%p] [%h]"
-#define COMMAND_SUMMON "summon %s %i %i %i"
-#define COMMAND_TELEPORT "tp %s %f %f %f"
+#define COMMAND_SETBLOCK "setblock %i %i %i %b"
+#define COMMAND_SETBLOCK_EX "setblock %i %i %i %b %p %h"
+#define COMMAND_SETBLOCK_COORD "setblock %c %b"
+#define COMMAND_SETBLOCK_COORD_EX "setblock %c %b %p %h"
+#define COMMAND_SUMMON "summon %e %i %i %i"
+#define COMMAND_SUMMON_F "summon %e %f %f %f"
+#define COMMAND_SUMMON_COORD "summon %e %c"
+#define COMMAND_SUMMON_COORD_F "summon %e %o"
+#define COMMAND_TELEPORT "tp %s %i %i %i"
+#define COMMAND_TELEPORT_F "tp %s %f %f %f"
+#define COMMAND_TELEPORT_COORD "tp %s %c"
+#define COMMAND_TELEPORT_COORD_F "tp %s %o"
 extern const char* const COMMAND_FORMATS[];
 
 /* block_kind - define block types */
@@ -112,14 +144,16 @@ typedef enum {
     b_quartz_ore, b_hopper, b_quartz_block, b_quartz_stairs, b_activator_rail, b_dropper,
     b_stained_hardened_clay, b_stained_glass_pane, b_leaves2, b_log2, b_acacia_stairs,
     b_dark_oak_stairs, b_slime, b_barrier, b_iron_trapdoor, b_prismarine, b_sea_lantern,
-    b_hay_block, b_carpet, b_hardened_clay, b_coal_block, b_packed_ice, b_double_plant
+    b_hay_block, b_carpet, b_hardened_clay, b_coal_block, b_packed_ice, b_double_plant,
+
+    block_kind_size
 } block_kind;
 extern const char* const BLOCK_IDS[];
 
 /* data_value - block data values */
 typedef enum {
     /* wood planks */
-    d_oak_wood_planks = 0, d_spruce_wood_planks, d_birch_wood_planks, d_jungle_wood_planks,
+    d_oak_wood_planks, d_spruce_wood_planks, d_birch_wood_planks, d_jungle_wood_planks,
     d_acacia_wood_planks, d_dark_oak_wood_planks,
 
     /* stone */
@@ -200,25 +234,53 @@ typedef enum {
     h_destroy
 } block_handling;
 
+/* entity_kind - flags for summon command */
+typedef enum {
+    /* mob entities */
+    e_bat, e_blaze, e_cavespider, e_chicken, e_cow, e_creeper,
+    e_enderdragon, e_enderman, e_endermite, e_ghast, e_giant,
+    e_guardian, e_entityhorse, e_lavaslime, e_mushroomcow,
+    e_ocelot, e_pig, e_pigzombie, e_sheep, e_silverfish,
+    e_skeleton, e_slime, e_snowman, e_spider, e_villager,
+    e_irongolem, e_witch, e_witherboss, e_wolf, e_zombie
+    /* other */
+} entity_kind;
+
 /*************************************************************
  * STRUCTURES ************************************************
  *************************************************************
- *************************************************************
  */
 
-/* token - stores a token */
+/* coord - define location */
+typedef struct {
+    int coord_x;
+    int coord_y;
+    int coord_z;
+} coord;
+
+/* coordf - define location (use floating-point values) */
+typedef struct {
+    double coord_x;
+    double coord_y;
+    double coord_z;
+} coordf;
+
+/* token - stores a command token */
 typedef union {
     int tok_flag;
-    float tok_float;
+    double tok_float;
     const char* tok_str;
+    coord tok_coord;
+    coordf tok_coordf;
 } token;
 void token_init(token* tok);
 void token_assign_flag(token* tok,int flag);
 void token_assign_int(token* tok,int i);
-void token_assign_float(token* toke,float f);
+void token_assign_float(token* toke,double f);
 void token_assign_str(token* tok,const char* str);
-const char* token_to_str(token* tok,int kind); /* interpret the token as a string based on token_kind  (not thread-safe) */
-const char* token_to_str_tsafe(token* tok,int kind,char* buffer/*MAX_BUFFER+1 length*/); /* same as above but may use provided buffer for thread safety */
+/* interpret the token as a string based on token_kind; 'buffer' may be used
+   to house the string (for thread-safety) if it needs to be created */
+const char* token_to_str(const token* tok,int kind,char* buffer,int size);
 
 /* message - store message from minecontrol server */
 typedef struct {
@@ -230,29 +292,51 @@ typedef struct {
     char msg_tokbuffer[MAX_BUFFER+1];
 } message;
 void message_init(message* msg);
-int message_assign(message* msg,const char* source); /* parse source message */
+int message_assign(message* msg,const char* source); /* parse source message: return -1 on error, 0 on success */
+
+/* callback_parameter - represents callback parameter data */
+typedef struct {
+    int i_top;
+    int c_top;
+    int f_top;
+    int s_top;
+    int* i_tokens;
+    char* c_tokens;
+    double* f_tokens;
+    char** s_tokens;
+} callback_parameter;
+int callback_parameter_init(callback_parameter* params,const char* format,char* message,int* i_tokens,char* c_tokens,double* f_tokens,char** s_tokens);
+void callback_parameter_destroy(callback_parameter* params);
 
 /* command - store command to send to Minecraft server */
 typedef struct {
     int com_kind; /* command_kind */
-    token com_tokens[MAX_COMMAND_TOKENS+1];
-    int com_toktop;
+    token com_tokens[MAX_COMMAND_TOKENS];
+    int com_toktop; /* number of tokens in 'com_tokens' */
 } command;
 void command_init(command* com);
-void command_assign(command* com,int kind);
-void command_assign_ex(command* com,int kind,const char* source);
-void command_addtoken(command* com,const char* token);
-void command_addtoken_byflag(command* com,int flag);
-int command_replacetoken(command* com,int position,const char* token);
-int command_replacetoken_byflag(command* com,int position,int flag);
-int command_compile(command* com,char* buffer,int size);
+int command_assign(command* com,int kind, ...); /* return >=0 on success, -1 on error */
+token* command_create_token(command* com);
+void command_add_token(command* com,const char* str);
+void command_add_token_byflag(command* com,int flag);
+token* command_get_token(command* com,int position);
+void command_assign_token(command* com,int position,const char* str);
+void command_assign_token_byflag(command* com,int position,int flag);
+int command_compile(const command* com,char* buffer,int size); /* return number of bytes written to 'buffer' */
 
-/* coord - define location */
+/* blockmap - used to buffer 'setblock' command strings for different block kinds */
 typedef struct {
-    int coord_x;
-    int coord_y;
-    int coord_z;
-} coord;
+    command** bmap_data; /* array should contain same number of elements as enum block_kind */
+    int bmap_cmd_top;
+    int bmap_cmd_alloc;
+    command* bmap_cmd_data; /* only store COMMAND_SETBLOCK */
+} blockmap;
+void blockmap_init(blockmap* bmap,int defaultAllocation);
+void blockmap_destroy(blockmap* bmap);
+command* blockmap_insert(blockmap* bmap,int kind);
+void blockmap_insert_ex(blockmap* bmap,int* kinds,int count);
+command* blockmap_lookup(blockmap* bmap,int kind,int x,int y,int z); /* retrieve command structure for setblock with coord tokens replaced */
+command* blockmap_lookup_ex(blockmap* bmap,int kind,const coord* loc);
 
 /* rectangle - defines a 2D rectangle */
 typedef struct {
@@ -268,25 +352,55 @@ typedef struct {
 
 /* pattern - define an array (grid) of block kinds */
 typedef struct {
-    int pat_data[MAX_PATTERN][MAX_PATTERN];
+    int pat_width;
+    int pat_height;
+    int** pat_data;
     int pat_flags;
 } pattern;
+void pattern_init(pattern* pat,int width,int height);
+void pattern_destroy(pattern* pat);
+void pattern_modify(pattern* pat,int kind,int row,int col);
+void pattern_fill(pattern* pat,int kind);
+void pattern_outline(pattern* pat,int kind,int depth);
 
-
+/*************************************************************
+ * FUNCTIONS: general operation ******************************
+ *************************************************************
+ */
 
 /* general operation functions */
 int get_message(char* buffer,int size); /* return message_kind; place rest-of-line in buffer */
 int get_message_ex(message* msg);
-void issue_command(int kind, ...);
-void issue_command_ex(const command* com);
+int issue_command(int kind, ...); /* return 0 on success, -1 on error */
+int issue_command_ex(const command* com);
+int issue_command_str(const char* fmt, ...);
 
-/* apply functions */
+/*************************************************************
+ * FUNCTIONS: higher level ***********************************
+ *************************************************************
+ */
+
+/* higher-level functions */
+typedef int (*callback)(int kind,const char* message);
+typedef int (*callback_sync)(int kind,const char* message,const callback_parameter* params);
+typedef int (*callback_async)(const volatile short int* status,int kind,const char* message,const callback_parameter* params);
+void init_minecontrol_api();
+int hook_tracking_function(callback_sync func,int kind,const char* format);
+int hook_tracking_function_async(callback_async func,int kind,const char* format);
+int begin_input_tracking(callback hookMain);
+int end_input_tracking();
+void close_minecontrol_api();
+
+/* standard callbacks for input tracking system */
+int track_players(int,const char*);
+
+/* higher-level geometry functions */
 void apply_block(int kind,int x,int y,int z);
 void apply_block_ex(int kind,const coord* loc);
 void apply_rectangle(int kind,int x,int y,int z,int width,int height);
 void apply_rectangle_ex(int kind,const coord* loc,const rectangle* rect);
 void apply_rectangle_pat(const pattern* pat,const coord* loc,const rectangle* rect);
-void apply_box(int kind,int x,int y,int z,int widthv,int heightv,int widthh,int heighth);
+void apply_box(int kind,int x,int y,int z,int widthv,int heightv,int widthh,int height);
 void apply_box_ex(int kind,const coord* loc,const box* bx);
 void apply_box_pat(const pattern* pat,const coord* loc,const box* bx);
 

@@ -1,5 +1,6 @@
 #include "pipe.h"
 #include <unistd.h>
+#include <fcntl.h>
 #include <limits.h>
 using namespace rtypes;
 using namespace minecraft_controller;
@@ -83,7 +84,8 @@ void pipe::duplicate_output(int fd)
 }
 void pipe::_openEvent(const char*,io_access_flag access,io_resource** pinput,io_resource** poutput,void**,uint32)
 {
-    // simulate full duplex mode by creating two pipes (that is, if the access is read/write)
+    // simulate full duplex mode by creating two pipes (that is, if the access is read/write); set
+    // O_NONBLOCK for the write end of the pipe (the one set for this io object)
     int pipe1[2]/*read*/, pipe2[2]/*write*/;
     if ((access&read_access)!=0 && ::pipe(pipe1)!=0)
         throw pipe_error();
@@ -98,6 +100,8 @@ void pipe::_openEvent(const char*,io_access_flag access,io_resource** pinput,io_
         _fdOpenWrite = pipe1[1];
     }
     if (access & write_access) {
+        if (fcntl(pipe2[1],F_SETFL,O_NONBLOCK) == -1)
+            throw pipe_error();
         *poutput = new io_resource;
         (*poutput)->assign(pipe2[1]);
         _fdOpenRead = pipe2[0];
