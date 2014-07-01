@@ -104,7 +104,7 @@ minecraft_server_message::minecraft_server_message(const str& originalPayload,co
 }
 str minecraft_server_message::get_type_string() const
 {
-    static const char* const DEFAULT = "type-unknown";
+    static const char* const DEFAULT = "unknown-msg";
     switch (_type) {
     case main_info:
         return "main-info";
@@ -127,7 +127,7 @@ str minecraft_server_message::get_gist_string() const
 {
     // these strings determine what an authority program
     // sees as its first token on an input line
-    static const char* const DEFAULT = "type-unknown";
+    static const char* const DEFAULT = "unknown";
     switch (_gist) {
     case gist_server_start:
         return "start";

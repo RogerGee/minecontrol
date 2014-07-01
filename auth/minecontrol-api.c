@@ -175,11 +175,9 @@ int message_assign(message* msg,const char* source)
                         msg->msg_tokens[msg->ta_top++] = msg->msg_tokbuffer+i;
                     }
                 }
-                if (tok[length]) {
-                    tok += length;
-                    length = 0;
-                    ++index;
-                }
+                tok += length;
+                length = 0;
+                ++index;
             }
             if (*tok == 0)
                 break;
@@ -202,6 +200,7 @@ static void _callback_parameter_free(int s_top,char** s_tokens)
 }
 int callback_parameter_init(callback_parameter* params,const char* format,char* message,int* i_tokens,char* c_tokens,double* f_tokens,char** s_tokens)
 {
+    printf("%p ^ %p\n",format,message);
     params->i_top = 0;
     params->c_top = 0;
     params->f_top = 0;
@@ -214,67 +213,65 @@ int callback_parameter_init(callback_parameter* params,const char* format,char* 
         /* support the following message tokens for fundamental types:
             - %i (integer)
             - %c (character)
-            - %f (floating-point number)
-            - %s (string) */
-        /* parse message; tokens are separated by the next character in the format string */
+            - %n (floating-point number)
+            - %s (string)
+           parse message; tokens are separated by the next character in the format string */
         while (*format && *message) {
             if (*format == '%') {
                 char t_kind;
                 t_kind = *(++format);
                 if (t_kind) {
                     char t_sep;
+                    int i;
                     t_sep = *(++format);
-                    if (t_sep) {
-                        int i;
-                        i = 0;
-                        while (message[i] && message[i]!=t_sep)
-                            ++i;
+                    i = 0;
+                    while (message[i] && message[i]!=t_sep)
+                        ++i;
+                    if (message[i] == t_sep) {
                         /* substitue null separator temporarily */
                         message[i] = 0;
                         /* process string */
-                        switch (t_kind) {
-                        case 'i':
-                            if (params->i_top<MAX_MESSAGE_TOKENS && sscanf(message,"%d",i_tokens+params->i_top)==1)
-                                ++params->i_top;
-                        case 'c':
-                            if (params->c_top<MAX_MESSAGE_TOKENS && sscanf(message,"%c",c_tokens+params->c_top)==1)
-                                ++params->c_top;
-                        case 'f':
-                            if (params->f_top<MAX_MESSAGE_TOKENS && sscanf(message,"%lf",f_tokens+params->f_top)==1)
-                                ++params->f_top;
-                        case 's':
-                            if (params->s_top < MAX_MESSAGE_TOKENS) {
-                                s_tokens[params->s_top] = malloc(i);
-                                strcpy(s_tokens[params->s_top],message);
-                                ++params->s_top;
-                            }
-                        default:
-                            _callback_parameter_free(params->s_top,s_tokens);
-                            return -1;
+                        if (t_kind=='i' && params->i_top<MAX_MESSAGE_TOKENS && sscanf(message,"%d",i_tokens+params->i_top)==1)
+                            ++params->i_top;
+                        else if (t_kind=='c' && params->c_top<MAX_MESSAGE_TOKENS && sscanf(message,"%c",c_tokens+params->c_top)==1)
+                            ++params->c_top;
+                        else if (t_kind=='n' && params->f_top<MAX_MESSAGE_TOKENS && sscanf(message,"%lf",f_tokens+params->f_top)==1)
+                            ++params->f_top;
+                        else if (t_kind=='s' && params->s_top<MAX_MESSAGE_TOKENS) {
+                            s_tokens[params->s_top] = malloc(i+1); /* add one to account for the null terminator */
+                            strcpy(s_tokens[params->s_top],message);
+                            ++params->s_top;
+                        }
+                        else {
+                            message[i] = t_sep;
+                            goto error;
                         }
                         /* replace old separator and advance message */
                         message[i] = t_sep;
                         message += i;
                     }
+                    else
+                        goto error;
                 }
             }
-            if (*format != *message) {
-                _callback_parameter_free(params->s_top,s_tokens);
-                return -1;
-            }
+            if (*format != *message)
+                goto error;
+            if (!*format || !*message)
+                break;
             ++format;
             ++message;
         }
-        if (*format != *message) {
-            _callback_parameter_free(params->s_top,s_tokens);
-            return -1;
-        }
+        if (*format != *message)
+            goto error;
     }
     params->i_tokens = i_tokens;
     params->c_tokens = c_tokens;
     params->f_tokens = f_tokens;
     params->s_tokens = s_tokens;
     return 0;
+error:
+    _callback_parameter_free(params->s_top,s_tokens);
+    return -1;
 }
 void callback_parameter_destroy(callback_parameter* params)
 {
@@ -489,7 +486,7 @@ int get_message(char* buffer,int size)
 {
     int kind;
     int length;
-    const char* tok;
+    char* tok;
     /* read a line of input */
     if (fgets(buffer,size,stdin) == NULL) {
         buffer[0] = 0;
@@ -506,15 +503,30 @@ int get_message(char* buffer,int size)
     for (kind = _m_first;kind <= _m_last;++kind)
         if (strlen(MESSAGE_KINDS[kind])==length && strncmp(tok,MESSAGE_KINDS[kind],length)==0)
             break;
+    /* remove endline from buffer */
+    if (tok != buffer) {
+        while (*tok)
+            ++tok;
+        --tok;
+        *tok = 0;
+    }
     if (kind > m_unknown)
         return m_invalid;
     return kind;
 }
 int get_message_ex(message* msg)
 {
+    char* p;
     char buffer[MAX_BUFFER];
     if (fgets(buffer,MAX_BUFFER,stdin) == NULL)
         return m_eoi;
+    /* remove endline from buffer */
+    p = buffer;
+    while (*p)
+        ++p;
+    if (p != buffer)
+        *(--p) = 0;
+    /* let the message structure parse the message */
     message_assign(msg,buffer);
     return msg->msg_kind;
 }
@@ -576,7 +588,7 @@ int issue_command_str(const char* fmt, ...)
 /* types used to implement higher-level interface */
 struct sync_info
 {
-    callback_sync cback;
+    callback_sync cback; /* NULL-status is used by implementation to check validity of object */
     int kind;
     const char* format;
 };
@@ -622,7 +634,7 @@ struct async_info
 {
     int kind;
     const char* format;
-    callback_async cback;
+    callback_async cback; /* NULL-status is checked by implementation to determine state of object */
     volatile short status;
     unsigned char tids_in_use[MAX_ASYNC_INSTANCES];
     pthread_t tids[MAX_ASYNC_INSTANCES];
@@ -662,23 +674,27 @@ static void* async_info_thread_start(void* pparam)
     if (callback_parameter_init(&params,apinfo->ainfo->format,apinfo->message,i_tokens,c_tokens,f_tokens,s_tokens) == 0) {
         (*apinfo->ainfo->cback)(&apinfo->ainfo->status,apinfo->ainfo->kind,apinfo->message,&params);
         callback_parameter_destroy(&params);
-        free(apinfo->message);
-        free(apinfo);
     }
+    free(apinfo->message);
+    free(apinfo);
     pthread_exit(NULL);
 }
 static int async_info_invoke(struct async_info* ainfo,char* message)
 {
     int i;
     i = 0;
-    while (i < MAX_ASYNC_INSTANCES)
+    while (i < MAX_ASYNC_INSTANCES) {
         if (!ainfo->tids_in_use[i])
             break;
+        else
+            ++i;
+    }
     if (i < MAX_ASYNC_INSTANCES) {
         /* prepare thread info parameter on heap */
         struct async_param_info* apinfo;
         apinfo = malloc(sizeof(struct async_param_info));
-        apinfo->message = malloc(strlen(message));
+        apinfo->message = malloc(strlen(message)+1); /* add 1 for null terminator */
+        apinfo->ainfo = ainfo;
         strcpy(apinfo->message,message);
         ainfo->tids_in_use[i] = 1;
         /* start thread */
@@ -715,7 +731,6 @@ static void async_info_destroy(struct async_info* ainfo)
 static volatile short _minecontrol_api_itrack_state = 0;
 static blockmap _minecontrol_api_bmap;
 static pthread_mutex_t _minecontrol_api_protect_bmap = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t _minecontrol_api_protect_hooks = PTHREAD_MUTEX_INITIALIZER;
 static struct sync_info _minecontrol_api_sync_hooks[_m_last+1];
 static struct async_info _minecontrol_api_async_hooks[_m_last+1];
 
@@ -751,6 +766,7 @@ int begin_input_tracking(callback hookMain)
         _minecontrol_api_itrack_state = 1;
         message msg;
         while (_minecontrol_api_itrack_state) {
+            int i;
             int kind;
             /* reset msg object */
             message_init(&msg);
@@ -758,23 +774,29 @@ int begin_input_tracking(callback hookMain)
             kind = get_message_ex(&msg);
             if (kind == m_invalid)
                 continue;
+            /* invoke the main hook; send m_eoi so that it can quit too */
+            (*hookMain)(kind,msg.msg_buffer);
             if (kind == m_eoi) /* end of input */
                 break;
             if (_minecontrol_api_sync_hooks[kind].cback != NULL)
                 sync_info_invoke(_minecontrol_api_sync_hooks + kind,msg.msg_buffer);
             if (_minecontrol_api_async_hooks[kind].cback != NULL)
-                async_info_invoke(_minecontrol_api_sync_hooks + kind,msg.msg_buffer);
+                async_info_invoke(_minecontrol_api_async_hooks + kind,msg.msg_buffer);
+            /* check all async threads for termination; it's good to be responsible */
+            for (i = 0;i <= _m_last+1;++i)
+                if (_minecontrol_api_async_hooks[kind].cback != NULL)
+                    async_info_check(_minecontrol_api_async_hooks + kind);
         }
-        /* signal tracking is closing down */
-
+        /* just in case, flag our new state */
+        _minecontrol_api_itrack_state = 0;
         return 0;
     }
     return -1;
 }
-int end_input_tracking()
+void end_input_tracking()
 {
+    /* signal tracking is closing down */
     _minecontrol_api_itrack_state = 0;
-    return 0;
 }
 void close_minecontrol_api()
 {
@@ -804,11 +826,4 @@ void apply_block(int kind,int x,int y,int z)
 void apply_block_ex(int kind,const coord* loc)
 {
     apply_block(kind,loc->coord_x,loc->coord_y,loc->coord_z);
-}
-
-/*test*/
-int main()
-{
-    
-    return 0;
 }

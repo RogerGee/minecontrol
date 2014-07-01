@@ -69,7 +69,7 @@ typedef enum {
 #define MESSAGE_PLAYER_LOST_CONNECTION "lost-connection"
 #define MESSAGE_PLAYER_LEAVE "leave"
 #define MESSAGE_PLAYER_ACHIEVEMENT "achievement"
-#define MESSAGE_UNKNOWN "type-unknown"
+#define MESSAGE_UNKNOWN "unknown"
 extern const char* const MESSAGE_KINDS[];
 
 /* command format constants */
@@ -383,12 +383,12 @@ int issue_command_str(const char* fmt, ...);
 /* higher-level functions */
 typedef int (*callback)(int kind,const char* message);
 typedef int (*callback_sync)(int kind,const char* message,const callback_parameter* params);
-typedef int (*callback_async)(const volatile short int* status,int kind,const char* message,const callback_parameter* params);
+typedef int (*callback_async)(const volatile short* status,int kind,const char* message,const callback_parameter* params);
 void init_minecontrol_api();
 int hook_tracking_function(callback_sync func,int kind,const char* format);
 int hook_tracking_function_async(callback_async func,int kind,const char* format);
 int begin_input_tracking(callback hookMain);
-int end_input_tracking();
+void end_input_tracking();
 void close_minecontrol_api();
 
 /* standard callbacks for input tracking system */
