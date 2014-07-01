@@ -391,9 +391,6 @@ int begin_input_tracking(callback hookMain);
 void end_input_tracking();
 void close_minecontrol_api();
 
-/* standard callbacks for input tracking system */
-int track_players(int,const char*);
-
 /* higher-level geometry functions */
 void apply_block(int kind,int x,int y,int z);
 void apply_block_ex(int kind,const coord* loc);

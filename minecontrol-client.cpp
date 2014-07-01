@@ -610,22 +610,24 @@ bool controller_client::command_console(rstream& kstream,rstream& vstream)
         connection << msgbuf.get_message();
         return false;
     }
+    // get authority object and server information (for log messages)
     minecontrol_authority* pauth;
     minecontrol_authority::console_result res = minecontrol_authority::console_no_channel;
+    str serverName = servers[i]->pserver->get_internal_name();
+    uint32 serverID = servers[i]->pserver->get_internal_id();
     pauth = servers[i]->pserver->get_authority();
+    // return regulation of server(s) to the manager before we begin console negotiation; this way the servers may
+    // be shared with other clients who are logged into this minecontrol server
+    minecraft_server_manager::attach_server(&servers[0],servers.size());
     if (pauth != NULL) {
-        client_log(minecontrold::standardLog) << "client entered console mode on server '" << servers[i]->pserver->get_internal_name()
-                                              << "' with id=" << servers[i]->pserver->get_internal_id() << endline;
+        client_log(minecontrold::standardLog) << "client entered console mode on server '" << serverName << "' with id=" << serverID << endline;
         res = pauth->client_console_operation(*sock);
-        client_log(minecontrold::standardLog) << "client exited console mode on server '" << servers[i]->pserver->get_internal_name()
-                                              << "' with id=" << servers[i]->pserver->get_internal_id() << endline;
+        client_log(minecontrold::standardLog) << "client exited console mode on server '" << serverName << "' with id=" << serverID << endline;
     }
     else {
         prepare_error() << "The server's authority management has shutdown; this may be a bug in minecontrold" << flush;
         connection << msgbuf.get_message();
     }
-    // return regulation of server(s) to the manager
-    minecraft_server_manager::attach_server(&servers[0],servers.size());
     return res != minecontrol_authority::console_no_channel;
 }
 bool controller_client::command_shutdown(rstream&,rstream&)

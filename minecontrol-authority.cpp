@@ -219,8 +219,8 @@ str minecraft_server_message::get_gist_string() const
 
 const char* const minecontrol_authority::AUTHORITY_EXE_PATH = "/usr/lib/minecontrol:/usr/local/lib/minecontrol"; // standard authority script location
 const char* const minecontrol_authority::AUTHORITY_EXEC_FILE = "minecontrol.exec";
-minecontrol_authority::minecontrol_authority(const pipe& ioChannel,const str& serverDirectory,const user_info& userInfo)
-    : _iochannel(ioChannel), _serverDirectory(serverDirectory), _login(userInfo)
+minecontrol_authority::minecontrol_authority(const pipe& ioChannel,int fderr,const str& serverDirectory,const user_info& userInfo)
+    : _iochannel(ioChannel), _fderr(fderr), _serverDirectory(serverDirectory), _login(userInfo)
 {
     _childCnt = 0;
     for (int i = 0;i < ALLOWED_CHILDREN;++i)
@@ -228,7 +228,6 @@ minecontrol_authority::minecontrol_authority(const pipe& ioChannel,const str& se
     _threadID = -1;
     _consoleEnabled = true;
     _threadCondition = true;
-    _clientchannel = NULL;
     // start default scripts from _serverDirectory/AUTHORITY_EXEC_FILE
     file execFile;
     str execFileName = _serverDirectory;
@@ -269,7 +268,13 @@ minecontrol_authority::console_result minecontrol_authority::client_console_oper
     if (_iochannel.is_valid_context() && _consoleEnabled) {
         _clientMtx.lock();
         // register the client
-        _clientchannel = &clientChannel;
+        size_type i = 0;
+        while (i<_clientchannels.size() && _clientchannels[i]!=NULL)
+            ++i;
+        if (i >= _clientchannels.size())
+            _clientchannels.push_back(&clientChannel);
+        else
+            _clientchannels[i] = &clientChannel;
         // handle input from client using the minecontrol protocol; another thread will send messages;
         // we do not respond directly to these messages; the communication to the client is asynchronous
         minecontrol_message to, from;
@@ -301,7 +306,7 @@ minecontrol_authority::console_result minecontrol_authority::client_console_oper
             }
         }
         _clientMtx.lock();
-        if (_clientchannel != NULL) {
+        if (_clientchannels[i] != NULL) {
             // if a message was never received or if the last message received was good, then
             // we exit console mode gracefully by sending a shutdown console message
             if (from.good() || from.is_blank()/*just in case*/) {
@@ -311,7 +316,7 @@ minecontrol_authority::console_result minecontrol_authority::client_console_oper
                 to.write_protocol_message(clientChannel);
             }
             // unregister the client
-            _clientchannel = NULL;
+            _clientchannels[i] = NULL;
         }
         _clientMtx.unlock();
         return _consoleEnabled ? console_communication_finished : console_communication_terminated;
@@ -379,6 +384,11 @@ minecontrol_authority::execute_result minecontrol_authority::run_executable(str 
         // duplicate Minecraft server process's stdin as stdout, then
         // close all open file descriptors except standard fds
         _iochannel.duplicate_output(STDOUT_FILENO);
+        // duplicate _fderr as stderr for the process; this was provided by the caller
+        // and should point to an log/error file for the authority program that it shares
+        // with the Minecraft process
+        if (dup2(_fderr,STDERR_FILENO) != STDERR_FILENO)
+            _exit((int)authority_exec_cannot_run);
         int maxfd;
         maxfd = sysconf(_SC_OPEN_MAX);
         if (maxfd == -1)
@@ -480,29 +490,33 @@ void* minecontrol_authority::processing(void* pparam)
             pbuf += last;
         }
         if (len==0 && object->_iochannel.get_last_operation_status()!=success_read) {
-            /* the pipe is not responding; the server probably shutdown */
-            // if a client is connected, send a console-message with status shutdown; the
-            // mutex lock unsures that we don't conflict with another thread that might try
-            // to send the shutdown status
+            /* the pipe is not responding; the server probably shutdown; if clients are 
+               connected, send a console-message with status shutdown; the mutex lock 
+               unsures that we don't conflict with another thread that might try to send
+               the shutdown status */
             object->_clientMtx.lock();
-            if (object->_clientchannel != NULL) {
-                minecontrol_message msg("CONSOLE-MESSAGE");
-                msg.add_field("Status","shutdown");
-                msg.write_protocol_message(*object->_clientchannel);
-                object->_clientchannel = NULL;
+            for (size_type i = 0;i < object->_clientchannels.size();++i) {
+                if (object->_clientchannels[i] != NULL) {
+                    minecontrol_message msg("CONSOLE-MESSAGE");
+                    msg.add_field("Status","shutdown");
+                    msg.write_protocol_message(*object->_clientchannels[i]);
+                    object->_clientchannels[i] = NULL;
+                }
             }
             object->_clientMtx.unlock();
             object->_threadCondition = false;
             break;
         }
-        // if a client is registered with the authority, send the message as is
+        // if clients are registered with the authority, send the message as is
         object->_clientMtx.lock();
-        if (object->_clientchannel != NULL) {
-            // use the minecontrol protocol to send the server message
-            minecontrol_message msg("CONSOLE-MESSAGE");
-            msg.add_field("Status","message");
-            msg.add_field("Payload",msgbuf);
-            msg.write_protocol_message(*object->_clientchannel);
+        for (size_type i = 0;i < object->_clientchannels.size();++i) {
+            if (object->_clientchannels[i] != NULL) {
+                // use the minecontrol protocol to send the server message
+                minecontrol_message msg("CONSOLE-MESSAGE");
+                msg.add_field("Status","message");
+                msg.add_field("Payload",msgbuf);
+                msg.write_protocol_message(*object->_clientchannels[i]);
+            }
         }
         object->_clientMtx.unlock();
         // if there are any child programs running, send a parsed version of the

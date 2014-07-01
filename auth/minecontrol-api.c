@@ -200,7 +200,6 @@ static void _callback_parameter_free(int s_top,char** s_tokens)
 }
 int callback_parameter_init(callback_parameter* params,const char* format,char* message,int* i_tokens,char* c_tokens,double* f_tokens,char** s_tokens)
 {
-    printf("%p ^ %p\n",format,message);
     params->i_top = 0;
     params->c_top = 0;
     params->f_top = 0;
@@ -215,6 +214,7 @@ int callback_parameter_init(callback_parameter* params,const char* format,char* 
             - %c (character)
             - %n (floating-point number)
             - %s (string)
+            - %t (string; also separated by whitespace)
            parse message; tokens are separated by the next character in the format string */
         while (*format && *message) {
             if (*format == '%') {
@@ -225,7 +225,7 @@ int callback_parameter_init(callback_parameter* params,const char* format,char* 
                     int i;
                     t_sep = *(++format);
                     i = 0;
-                    while (message[i] && message[i]!=t_sep)
+                    while (message[i] && message[i]!=t_sep && (t_kind!='t' || !isspace(message[i])))
                         ++i;
                     if (message[i] == t_sep) {
                         /* substitue null separator temporarily */
@@ -237,7 +237,7 @@ int callback_parameter_init(callback_parameter* params,const char* format,char* 
                             ++params->c_top;
                         else if (t_kind=='n' && params->f_top<MAX_MESSAGE_TOKENS && sscanf(message,"%lf",f_tokens+params->f_top)==1)
                             ++params->f_top;
-                        else if (t_kind=='s' && params->s_top<MAX_MESSAGE_TOKENS) {
+                        else if ((t_kind=='s' || t_kind=='t') && params->s_top<MAX_MESSAGE_TOKENS) {
                             s_tokens[params->s_top] = malloc(i+1); /* add one to account for the null terminator */
                             strcpy(s_tokens[params->s_top],message);
                             ++params->s_top;
@@ -731,8 +731,10 @@ static void async_info_destroy(struct async_info* ainfo)
 static volatile short _minecontrol_api_itrack_state = 0;
 static blockmap _minecontrol_api_bmap;
 static pthread_mutex_t _minecontrol_api_protect_bmap = PTHREAD_MUTEX_INITIALIZER;
-static struct sync_info _minecontrol_api_sync_hooks[_m_last+1];
-static struct async_info _minecontrol_api_async_hooks[_m_last+1];
+static int _minecontrol_api_sync_top[_m_last+1], _minecontrol_api_sync_alloc[_m_last+1];
+static struct sync_info* _minecontrol_api_sync_hooks[_m_last+1];
+static int _minecontrol_api_async_top[_m_last+1], _minecontrol_api_async_alloc[_m_last+1];
+static struct async_info* _minecontrol_api_async_hooks[_m_last+1];
 
 /* higher-level init/destroy functions */
 void init_minecontrol_api()
@@ -740,14 +742,34 @@ void init_minecontrol_api()
     int i;
     blockmap_init(&_minecontrol_api_bmap,32);
     for (i = 0;i <= _m_last;++i) {
-        sync_info_default(_minecontrol_api_sync_hooks + i);
-        async_info_default(_minecontrol_api_async_hooks + i);
+        int j;
+        /* allocate sync_info structures; initially provide 4 per type */
+        _minecontrol_api_sync_alloc[i] = 4;
+        _minecontrol_api_async_alloc[i] = 4;
+        _minecontrol_api_sync_top[i] = 0;
+        _minecontrol_api_async_top[i] = 0;
+        _minecontrol_api_sync_hooks[i] = malloc(sizeof(struct sync_info) * _minecontrol_api_sync_alloc[i]);
+        for (j = 0;j < _minecontrol_api_sync_alloc[i];++j)
+            sync_info_default(_minecontrol_api_sync_hooks[i] + j);
+        _minecontrol_api_async_hooks[i] = malloc(sizeof(struct async_info) * _minecontrol_api_async_alloc[i]);
+        for (j = 0;j < _minecontrol_api_async_alloc[i];++j)
+            async_info_default(_minecontrol_api_async_hooks[i] + j);
     }
 }
 int hook_tracking_function(callback_sync func,int kind,const char* format)
 {
     if (kind>=0 && kind<=_m_last) {
-        sync_info_init(_minecontrol_api_sync_hooks + kind,func,kind,format);
+        if (_minecontrol_api_sync_top[kind] >= _minecontrol_api_sync_alloc[kind]) {
+            int i;
+            struct sync_info* pnew;
+            _minecontrol_api_sync_alloc[kind] *= 2;
+            pnew = malloc(sizeof(struct sync_info*) * _minecontrol_api_sync_alloc[kind]);
+            for (i = 0;i < _minecontrol_api_sync_top[kind];++i)
+                pnew[i] = _minecontrol_api_sync_hooks[kind][i];
+            free(_minecontrol_api_sync_hooks[kind]);
+            _minecontrol_api_sync_hooks[kind] = pnew;
+        }
+        sync_info_init(_minecontrol_api_sync_hooks[kind] + _minecontrol_api_sync_top[kind]++,func,kind,format);
         return 0;
     }
     return -1;
@@ -755,7 +777,17 @@ int hook_tracking_function(callback_sync func,int kind,const char* format)
 int hook_tracking_function_async(callback_async func,int kind,const char* format)
 {
     if (kind>=0 && kind<=_m_last) {
-        async_info_init(_minecontrol_api_async_hooks + kind,func,kind,format);
+        if (_minecontrol_api_async_top[kind] >= _minecontrol_api_async_alloc[kind]) {
+            int i;
+            struct async_info* pnew;
+            _minecontrol_api_async_alloc[kind] *= 2;
+            pnew = malloc(sizeof(struct async_info*) * _minecontrol_api_async_alloc[kind]);
+            for (i = 0;i < _minecontrol_api_async_top[kind];++i)
+                pnew[i] = _minecontrol_api_async_hooks[kind][i];
+            free(_minecontrol_api_async_hooks[kind]);
+            _minecontrol_api_async_hooks[kind] = pnew;
+        }
+        async_info_init(_minecontrol_api_async_hooks[kind] + _minecontrol_api_async_top[kind]++,func,kind,format);
         return 0;
     }
     return -1;
@@ -778,14 +810,18 @@ int begin_input_tracking(callback hookMain)
             (*hookMain)(kind,msg.msg_buffer);
             if (kind == m_eoi) /* end of input */
                 break;
-            if (_minecontrol_api_sync_hooks[kind].cback != NULL)
-                sync_info_invoke(_minecontrol_api_sync_hooks + kind,msg.msg_buffer);
-            if (_minecontrol_api_async_hooks[kind].cback != NULL)
-                async_info_invoke(_minecontrol_api_async_hooks + kind,msg.msg_buffer);
+            /* try to invoke a callback on each registered function of the current
+               message type */
+            for (i = 0;i < _minecontrol_api_sync_top[kind];++i)
+                sync_info_invoke(_minecontrol_api_sync_hooks[kind] + i,msg.msg_buffer);
+            for (i = 0;i < _minecontrol_api_async_top[kind];++i)
+                async_info_invoke(_minecontrol_api_async_hooks[kind] + i,msg.msg_buffer);
             /* check all async threads for termination; it's good to be responsible */
-            for (i = 0;i <= _m_last+1;++i)
-                if (_minecontrol_api_async_hooks[kind].cback != NULL)
-                    async_info_check(_minecontrol_api_async_hooks + kind);
+            for (i = 0;i <= _m_last+1;++i) {
+                int j;
+                for (j = 0;j < _minecontrol_api_async_top[i];++j)
+                    async_info_check(_minecontrol_api_async_hooks[i] + j);
+            }
         }
         /* just in case, flag our new state */
         _minecontrol_api_itrack_state = 0;
@@ -804,8 +840,17 @@ void close_minecontrol_api()
     blockmap_destroy(&_minecontrol_api_bmap);
     _minecontrol_api_itrack_state = 0;
     for (i = 0;i <= _m_last;++i) {
-        sync_info_destroy(_minecontrol_api_sync_hooks + i);
-        async_info_destroy(_minecontrol_api_async_hooks + i);
+        int j;
+        for (j = 0;j < _minecontrol_api_sync_top[i];++j)
+            sync_info_destroy(_minecontrol_api_sync_hooks[i] + j);
+        for (j = 0;j < _minecontrol_api_async_top[i];++j)
+            async_info_destroy(_minecontrol_api_async_hooks[i] + j);
+        free(_minecontrol_api_sync_hooks[i]);
+        free(_minecontrol_api_async_hooks[i]);
+        _minecontrol_api_sync_top[i] = 0;
+        _minecontrol_api_sync_alloc[i] = 0;
+        _minecontrol_api_async_top[i] = 0;
+        _minecontrol_api_async_alloc[i] = 0;
     }
 }
 

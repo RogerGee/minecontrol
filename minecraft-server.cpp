@@ -377,7 +377,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
             return mcraft_start_failure_unknown;
         }
         // initialize the authority which will manage the minecraft server
-        _authority = new minecontrol_authority(_iochannel,mcraftdir.get_full_name(),info.userInfo);
+        _authority = new minecontrol_authority(_iochannel,_fderr,mcraftdir.get_full_name(),info.userInfo);
         // close the input side for our copy of the io channel; the authority
         // will maintain the read end of the pipe
         _iochannel.close_input();
@@ -477,7 +477,6 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
         }
         // put every "per-server" attribute back in an invalid state
         _iochannel.close();
-        _close_error_file(_internalName);
         _internalName.clear();
         _idSetProtect.lock();
         _idSet.remove(_internalID);
@@ -488,6 +487,8 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
             delete _authority;
             _authority = NULL;
         }
+        /* we must wait until the authority has finished using the error file descriptor */
+        _close_error_file(_internalName);
         _threadID = -1;
         _threadExit = mcraft_noexit;
         _maxTime = 0;

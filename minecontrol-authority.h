@@ -122,7 +122,7 @@ namespace minecraft_controller
         {
             authority_exec_okay, // the executable program was successfully executed
             authority_exec_okay_exited, // the executable program was successfully executed
-            authority_exec_cannot_run, // the process couldn't fork or exec failed in some way other than not finding the program
+            authority_exec_cannot_run, // the process couldn't fork, exec failed in some way other than not finding the program, or another system call failed
             authority_exec_access_denied, // the user didn't have execute permission for the executable program
             authority_exec_attr_fail, // the correct environment for the child process couldn't be applied
             authority_exec_not_program, // the specified file wasn't in an executable format
@@ -133,7 +133,7 @@ namespace minecraft_controller
             authority_exec_unspecified // the failure reason is undocumented
         };
 
-        minecontrol_authority(const pipe& ioChannel,const rtypes::str& serverDirectory,const user_info& login);
+        minecontrol_authority(const pipe& ioChannel,int fderr,const rtypes::str& serverDirectory,const user_info& login);
         ~minecontrol_authority();
 
         console_result client_console_operation(socket& clientChannel); // blocks
@@ -149,9 +149,10 @@ namespace minecraft_controller
         static void* processing(void*); // thread handler for message processing/message output to logged-in client or child processes
 
         pipe _iochannel; // IO channel to Minecraft server Java process (read/write enabled)
+        int _fderr; /* file descriptor for authority programs' stderr; assume it stays valid throughout the lifetime of the object */
         rtypes::str _serverDirectory; // directory of server files that the authority manages; becomes the current working directory for the child authority process
         user_info _login; // login information for user running minecraft server
-        socket* _clientchannel; // socket used for client communications using minecontrol protocol; NULL if client is not registered
+        rtypes::dynamic_array<socket*> _clientchannels; // sockets used for client communications using minecontrol protocol; empty if no clients registered
         pipe _childStdIn[ALLOWED_CHILDREN]; // write-only pipe (in parent) to child stdin
         rtypes::int32 _childID[ALLOWED_CHILDREN]; // parallel array of child process ids
         int _childCnt; // maintain a count of child processes (for convenience)
