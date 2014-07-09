@@ -61,6 +61,14 @@ const char* const BLOCK_IDS[] = {
    "minecraft:dark_oak_stairs", "minecraft:slime", "minecraft:barrier", "minecraft:iron_trapdoor", "minecraft:prismarine", "minecraft:sea_lantern", 
    "minecraft:hay_block", "minecraft:carpet", "minecraft:hardened_clay", "minecraft:coal_block", "minecraft:packed_ice", "minecraft:double_plant"
 };
+const char* const ENTITY_NAMES[] = {
+    "Bat", "Blaze", "CaveSpider", "Chicken", "Cow", "Creeper", "EnderDragon", "Enderman", "Endermite", "Ghast", "Giant", "Guardian", "EntityHorse",
+    "LavaSlime", "Mob", "Monster", "MushroomCow", "Ozelot", "Pig", "PigZombie", "Sheep", "Silverfish", "Skeleton", "Slime", "SnowMan", "Spider", "Squid",
+    "Villager", "VillagerGolem", "Witch", "WitherBoss", "Wolf", "Zombie", "MinecartHopper", "Boat", "SmallFireball", "Item", "LeashKnot", "Fireball",
+    "MinecartSpawner", "MinecartRideable", "Painting", "ThrownExpBottle", "Snowball", "MinecartChest", "WitherSkull", "MinecartFurnace", "EnderCrystal",
+    "FireworksRocketEntity", "Arrow", "ThrownPotion", "ThrownEnderpearl", "EyeOfEnderSignal", "PrimedTnt", "FallingSand", "ItemFrame", "XPOrb",
+    "MinecartCommandBlock", "MinecartTNT"
+};
 
 /* token functions */
 void token_init(token* tok)
@@ -117,6 +125,8 @@ const char* token_to_str(const token* tok,int kind,char* rbuf,int size)
             return "replace";
         else
             break;
+    case t_entity:
+        return ENTITY_NAMES[tok->tok_flag];
     default:
         break;
     }
@@ -852,23 +862,4 @@ void close_minecontrol_api()
         _minecontrol_api_async_top[i] = 0;
         _minecontrol_api_async_alloc[i] = 0;
     }
-}
-
-/* higher-level geometry functions */
-void apply_block(int kind,int x,int y,int z)
-{
-    command* com;
-    char buffer[MAX_BUFFER];
-    /* get the command that we need from the blockmap */
-    pthread_mutex_lock(&_minecontrol_api_protect_bmap);
-    com = blockmap_lookup(&_minecontrol_api_bmap,kind,x,y,z);
-    if (com == NULL)
-        com = blockmap_insert(&_minecontrol_api_bmap,kind);
-    if (command_compile(com,buffer,MAX_BUFFER) != -1)
-        issue_command_ex(com);
-    pthread_mutex_unlock(&_minecontrol_api_protect_bmap);
-}
-void apply_block_ex(int kind,const coord* loc)
-{
-    apply_block(kind,loc->coord_x,loc->coord_y,loc->coord_z);
 }

@@ -239,12 +239,19 @@ typedef enum {
     /* mob entities */
     e_bat, e_blaze, e_cavespider, e_chicken, e_cow, e_creeper,
     e_enderdragon, e_enderman, e_endermite, e_ghast, e_giant,
-    e_guardian, e_entityhorse, e_lavaslime, e_mushroomcow,
-    e_ocelot, e_pig, e_pigzombie, e_sheep, e_silverfish,
-    e_skeleton, e_slime, e_snowman, e_spider, e_villager,
-    e_irongolem, e_witch, e_witherboss, e_wolf, e_zombie
+    e_guardian, e_entityhorse, e_lavaslime, e_mob, e_monster,
+    e_mushroomcow, e_ocelot, e_pig, e_pigzombie, e_sheep, e_silverfish,
+    e_skeleton, e_slime, e_snowman, e_spider, e_squid, e_villager,
+    e_irongolem, e_witch, e_witherboss, e_wolf, e_zombie,
     /* other */
+    e_minecarthopper, e_boat, e_smallfireball, e_item, e_leashknot,
+    e_fireball, e_minecartspawner, e_minecartrideable, e_painting,
+    e_thrownexpbottle, e_snowball, e_minecartchest, e_witherskull,
+    e_minecartfurnace, e_endercrystal, e_fireworksrocket, e_arrow,
+    e_thrownpotion, e_thrownenderpearl, e_eyeofendersignal, e_primedtnt,
+    e_fallingsand, e_itemframe, e_xporb, e_minecartcommandblock, e_minecarttnt
 } entity_kind;
+extern const char* const ENTITY_NAMES[];
 
 /*************************************************************
  * STRUCTURES ************************************************
@@ -338,31 +345,6 @@ void blockmap_insert_ex(blockmap* bmap,int* kinds,int count);
 command* blockmap_lookup(blockmap* bmap,int kind,int x,int y,int z); /* retrieve command structure for setblock with coord tokens replaced */
 command* blockmap_lookup_ex(blockmap* bmap,int kind,const coord* loc);
 
-/* rectangle - defines a 2D rectangle */
-typedef struct {
-    int r_width;
-    int r_height;
-} rectangle;
-
-/* box - defines a 3D rectangular prism */
-typedef struct {
-    rectangle bx_recth;
-    rectangle bx_rectv;
-} box;
-
-/* pattern - define an array (grid) of block kinds */
-typedef struct {
-    int pat_width;
-    int pat_height;
-    int** pat_data;
-    int pat_flags;
-} pattern;
-void pattern_init(pattern* pat,int width,int height);
-void pattern_destroy(pattern* pat);
-void pattern_modify(pattern* pat,int kind,int row,int col);
-void pattern_fill(pattern* pat,int kind);
-void pattern_outline(pattern* pat,int kind,int depth);
-
 /*************************************************************
  * FUNCTIONS: general operation ******************************
  *************************************************************
@@ -390,15 +372,5 @@ int hook_tracking_function_async(callback_async func,int kind,const char* format
 int begin_input_tracking(callback hookMain);
 void end_input_tracking();
 void close_minecontrol_api();
-
-/* higher-level geometry functions */
-void apply_block(int kind,int x,int y,int z);
-void apply_block_ex(int kind,const coord* loc);
-void apply_rectangle(int kind,int x,int y,int z,int width,int height);
-void apply_rectangle_ex(int kind,const coord* loc,const rectangle* rect);
-void apply_rectangle_pat(const pattern* pat,const coord* loc,const rectangle* rect);
-void apply_box(int kind,int x,int y,int z,int widthv,int heightv,int widthh,int height);
-void apply_box_ex(int kind,const coord* loc,const box* bx);
-void apply_box_pat(const pattern* pat,const coord* loc,const box* bx);
 
 #endif
