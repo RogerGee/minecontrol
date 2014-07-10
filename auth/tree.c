@@ -1,7 +1,6 @@
 /* tree.c - implements tree data structure for standard minecontrol authority programs */
 #include "tree.h"
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 
 /* structures used by the implementation */
@@ -145,7 +144,7 @@ static void tree_node_do_split(struct tree_node* node,struct tree_node* parent)
     /* insert the node up into the parent; insertion should succeed because split value should not exist in parent */
     tree_node_insert_key(parent,median,node,newnode);
 }
-static const char* tree_node_remove_key(struct tree_node* node,const char* key,int index)
+static const char* tree_node_delete_key(struct tree_node* node,const char* key,int index)
 {
     /* assume that 'node->keys[index]' exists; this procedure leaves a hole
        in a leave node in some subtree of 'node' to be fixed later; return 
@@ -159,10 +158,10 @@ static const char* tree_node_remove_key(struct tree_node* node,const char* key,i
     k = node->keys[index];
     /* handle case where 'node' is a leaf */
     if (n == NULL) {
-        if (node->keys[1]!=NULL && index==0) {
-            /* delete lesser-ordered key from 3-node; shift the other key over */
-            node->keys[0] = node->keys[1];
-            node->keys[1] = NULL;
+        if (node->keys[1] != NULL) {
+            /* remove key from 3-node */
+            node->keys[index] = node->keys[index+1];
+            node->keys[index+1] = NULL;
         }
         else {
             /* leave hole */
@@ -187,7 +186,7 @@ static const char* tree_node_remove_key(struct tree_node* node,const char* key,i
         else {
             /* leave hole */
             n->keys[0] = NULL;
-            swapKey = n->keys[0]->key;
+            swapKey = node->keys[index]->key;
         }
     }
     /* delete the key */
@@ -195,24 +194,73 @@ static const char* tree_node_remove_key(struct tree_node* node,const char* key,i
     free(k);
     return swapKey;
 }
+static void tree_node_remove_key(struct tree_node* node,int keyIndex,int childIndex)
+{
+    int i, j;
+    for (i = keyIndex,j = keyIndex+1;j < 3;++i,++j)
+        node->keys[i] = node->keys[j];
+    for (i = childIndex,j = childIndex+1;j < 4;++i,++j)
+        node->children[i] = node->children[j];
+}
 static void tree_node_do_fix(struct tree_node* node,struct tree_node* parent)
 {
     /* this procedure assumes that the caller has ensured that 'node' is a hole */
-
-}
-static void tree_node_debug(struct tree_node* node,int lv)
-{
     int i;
-    for (i = 0;i < lv;++i)
-        putchar('\t');
-    printf("(%s, %s, %s)\n",node->keys[0]!=NULL ? node->keys[0]->key : "null",
-        node->keys[1]!=NULL ? node->keys[1]->key : "null",
-        node->keys[2]!=NULL ? node->keys[2]->key : "null");
-    i = 0;
-    while (i < 3) {
-        if (node->children[i] != NULL)
-            tree_node_debug(node->children[i],lv+1);
-        ++i;
+    int ni;
+    int bound;
+    ni = 0;
+    while (parent->children[ni] != node)
+        ++ni;
+    if (parent->keys[1] != NULL)
+        bound = 2;
+    else
+        bound = 1;
+    /* see if immediate right sibling is a 3-node */
+    if (ni<bound && parent->children[(i = ni+1)]->keys[1] != NULL) {
+        int isep = i-1;
+        node->keys[0] = parent->keys[isep];
+        parent->keys[isep] = parent->children[i]->keys[0];
+        node->children[1] = parent->children[i]->children[0];
+        tree_node_remove_key(parent->children[i],0,0);
+    }
+    /* see if immediate left sibling is a 3-node */
+    else if (ni>0 && parent->children[(i = ni-1)]->keys[1] != NULL) {
+        /* int isep = i; */
+        node->keys[0] = parent->keys[i];
+        parent->keys[i] = parent->children[i]->keys[1];
+        node->children[1] = node->children[0]; /* need to shift this over */
+        node->children[0] = parent->children[i]->children[2];
+        tree_node_remove_key(parent->children[i],1,1);
+    }
+    /* any immediate siblings are 2-nodes */
+    else {
+        int left, right;
+        if (ni > 0) {
+            left = ni-1;
+            right = ni;
+        }
+        else {
+            left = 0;
+            right = 1;
+        }
+        if (parent->children[left]->keys[0] != NULL) {
+            /* left is 2-node; right is hole */
+            parent->children[left]->keys[1] = parent->keys[left];
+            parent->children[left]->children[2] = parent->children[right]->children[0];
+        }
+        else {
+            /* left is hole; right is 2-node */
+            parent->children[left]->keys[0] = parent->keys[left];
+            parent->children[left]->keys[1] = parent->children[right]->keys[0];
+            for (i = 0;i<2;++i)
+                parent->children[left]->children[i+1] = parent->children[right]->children[i];
+        }
+        /* delete the right child node */
+        free(parent->children[right]);
+        parent->children[right] = NULL;
+        /* remove the separator from the parent; shift children over from positions >right */
+        tree_node_remove_key(parent,left,right);
+        /* parent may now be a hole node */
     }
 }
 
@@ -386,8 +434,17 @@ static void tree_repair_recursive(struct tree_node** node,struct tree_node* pare
         if ((*node)->keys[0] != NULL)
             return;
     }
-    /* base case: fix a hole */
-    tree_node_do_fix((*node),parent);
+    if (parent == NULL) {
+        /* root node is a hole-node; delete the root node and assign its sole
+           child as the new root */
+        parent = (*node);
+        *node = parent->children[0];
+        free(parent);
+    }
+    else {
+        /* base case: fix a hole */
+        tree_node_do_fix((*node),parent);
+    }
 }
 int tree_remove(struct search_tree* tree,const char* key)
 {
@@ -397,11 +454,10 @@ int tree_remove(struct search_tree* tree,const char* key)
     tree_search_recursive(&info);
     if (info.node != NULL) {
         const char* skey;
-        if ((skey = tree_node_remove_key(info.node,key,info.index)) != NULL)
+        if ((skey = tree_node_delete_key(info.node,key,info.index)) != NULL)
             /* repair tree if removal left hole in tree */
             tree_repair_recursive(&tree->root,NULL,skey);
         return 0;
     }
     return 1;
 }
-
