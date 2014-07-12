@@ -11,6 +11,33 @@ struct tree_search_info
     const char* key;
 };
 
+/* misc helper functions */
+static void* init_dynamic_array(int* cap,size_t sz,size_t suggest)
+{
+    *cap = suggest;
+    return malloc(sz * suggest);
+}
+static void* grow_dynamic_array(void* arr,int* cap,size_t sz)
+{
+    /* assume arr points to an array that is at capacity; expand it
+       by twice that capacity */
+    int i, j;
+    int newcap;
+    void* newarr;
+    unsigned char* src;
+    unsigned char* dst;
+    newcap = *cap * 2;
+    newarr = malloc(sz * newcap);
+    src = arr;
+    dst = newarr;
+    for (i = 0;i < *cap;++i)
+        for (j = 0;j < sz;++j)
+            *dst++ = *src++;
+    free(arr);
+    *cap = newcap;
+    return newarr;
+}
+
 /* tree_key */
 void tree_key_init(struct tree_key* tkey,const char* key,void* payload)
 {
@@ -47,6 +74,10 @@ static int tree_key_compare_raw(const char* l,const char* r)
 int tree_key_compare(const struct tree_key* left,const struct tree_key* right)
 {
     return tree_key_compare_raw(left->key,right->key);
+}
+static int _tree_key_compare(const void* left,const void* right)
+{
+    return tree_key_compare_raw(((const struct tree_key*)left)->key,((const struct tree_key*)right)->key);
 }
 
 /* tree_node */
@@ -268,6 +299,129 @@ static void tree_node_do_fix(struct tree_node* node,struct tree_node* parent)
 void tree_init(struct search_tree* tree)
 {
     tree->root = NULL;
+}
+static void tree_construct_recursive(struct tree_node** nodes,int size,struct tree_key*** level)
+{
+    int i, j;
+    int qtop, qcap;
+    struct tree_node** queue;
+    if (*(level-1) != NULL) {
+        /* at internal level: prepare queue for child nodes */
+        qtop = 0;
+        qcap = 0;
+        queue = init_dynamic_array(&qcap,sizeof(struct tree_node*),size*2);
+    }
+    else
+        /* at leaf level: nodes have no children */
+        queue = NULL;
+    for (i = 0,j = 0;i < size;++i) {
+        int k;
+        k = 0;
+        /* place keys into the node; a NULL value acts as the terminator for any
+           node's keys; allow the node to become up to a 4-node */
+        while (k < 3) {
+            if ((*level)[j] == NULL) {
+                ++j;
+                break;
+            }
+            nodes[i]->keys[k++] = (*level)[j++];
+        }
+        /* create the nodes children according to tree behavior; allow up to 4 children
+           for 4-nodes */
+        if (queue != NULL) {
+            k = 0;
+            while (k<2 || (k<4 && nodes[i]->keys[k-1]!=NULL)) {
+                if (qtop >= qcap)
+                    queue = grow_dynamic_array(queue,&qcap,sizeof(struct tree_node*));
+                queue[qtop] = malloc(sizeof(struct tree_node));
+                tree_node_init(queue[qtop]);
+                nodes[i]->children[k++] = queue[qtop++];
+            }
+        }
+    }
+    if (queue != NULL) {
+        /* recursively construct the next level (down the array) */
+        tree_construct_recursive(queue,qtop,level-1);
+        free(queue);
+    }
+}
+void tree_construct(struct search_tree* tree,struct tree_key* keys,int size)
+{
+    int i, j;
+    struct tree_key** arr;
+    int lvcap, lvtop;
+    struct tree_key*** levels;
+    const char* plast;
+    /* do size check */
+    if (size <= 0)
+        return;
+    /* we must ensure that the data is sorted */
+    qsort(keys,size,sizeof(struct tree_key),&_tree_key_compare);
+    /* create the key-value structures on the heap that will be used in the tree; ignore
+       duplicate key values; note that 'i' will contain the array size to use */
+    arr = malloc(sizeof(struct tree_key*) * (size+1));
+    i = 0;
+    j = 0;
+    plast = NULL;
+    while (1) {
+        if (plast != NULL)
+            while (j<size && tree_key_compare_raw(plast,keys[j].key) == 0)
+                ++j;
+        if (j >= size)
+            break;
+        arr[i] = malloc(sizeof(struct tree_key));
+        tree_key_init(arr[i],keys[j].key,keys[j].payload);
+        plast = keys[j].key;
+        ++i, ++j;
+    }
+    arr[i] = NULL;
+    size = i;
+    /* construct the levels of the tree; store them in a dynamic array; put NULL as first element;
+       this will indicate the end for the implementation */
+    lvcap = 0;
+    lvtop = 0;
+    levels = init_dynamic_array(&lvcap,sizeof(struct tree_key**),8);
+    levels[lvtop++] = NULL;
+    levels[lvtop] = arr;
+    while (1) {
+        int sz;
+        /* calculate the size of the new keys array; since keys are divided into groups of 3,
+           we can allocate size/3 number of key-value structures */
+        if ((sz = size / 3) > 0) {
+            /* add 2 to 'sz' so that we can: 1) store a terminating NULL pointer and 2) possibly
+               store an extra key given that size%3 == 2 */
+            sz += 2;
+            arr = malloc(sizeof(struct tree_key*) * sz);
+            /* go through previous level; find the middle key of every 3-key pair; put it in 'arr';
+               size of 'arr' will be 'i' */
+            for (i = 0,j = 2;j < size;++i,j+=3) {
+                arr[i] = levels[lvtop][j-1];
+                /* use NULL to separate keys */
+                levels[lvtop][j-1] = NULL;
+            }
+            /* handle case where size%3 == 2 */
+            if (j == size) {
+                arr[i++] = levels[lvtop][size-2];
+                levels[lvtop][size-2] = NULL;
+            }
+            arr[i] = NULL;
+            size = i;
+            /* assign 'arr' to the next available space in 'levels' */
+            if (++lvtop >= lvcap)
+                levels = grow_dynamic_array(levels,&lvcap,sizeof(struct tree_key**));
+            levels[lvtop] = arr;
+        }
+        else
+            break;
+    }
+    /* construct the tree; first build the root node */
+    tree->root = malloc(sizeof(struct tree_node));
+    tree_node_init(tree->root);
+    tree_construct_recursive(&tree->root,1,levels + lvtop);
+    /* free allocated memory */
+    for (i = 0;i <= lvtop;++i)
+        free(levels[i]);
+    free(levels);
 }
 void tree_destroy(struct search_tree* tree)
 {

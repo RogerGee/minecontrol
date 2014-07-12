@@ -30,6 +30,7 @@ struct search_tree
     struct tree_node* root;
 };
 void tree_init(struct search_tree* tree);
+void tree_construct(struct search_tree* tree,struct tree_key* keys,int size);
 void tree_destroy(struct search_tree* tree);
 /* return 1 if key already exists in tree */
 int tree_insert(struct search_tree* tree,const char* key,void* payload);

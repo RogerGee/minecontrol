@@ -406,90 +406,6 @@ int command_compile(const command* com,char* buffer,int size)
     return _command_compile(fmt,com->com_tokens,com->com_toktop,buffer,size);
 }
 
-/* blockmap functions */
-void blockmap_init(blockmap* bmap,int defaultAllocation)
-{
-    int i;
-    if (defaultAllocation < 1)
-        defaultAllocation = 16;
-    bmap->bmap_data = malloc(block_kind_size * sizeof(command*));
-    for (i = 0;i < block_kind_size;++i)
-        bmap->bmap_data[i] = NULL;
-    bmap->bmap_cmd_alloc = defaultAllocation;
-    bmap->bmap_cmd_top = 0;
-    bmap->bmap_cmd_data = malloc(defaultAllocation * sizeof(command));
-}
-void blockmap_destroy(blockmap* bmap)
-{
-    if (bmap->bmap_data != NULL) {
-        free(bmap->bmap_data);
-        bmap->bmap_data = NULL;
-    }
-    if (bmap->bmap_cmd_data != NULL) {
-        free(bmap->bmap_cmd_data);
-        bmap->bmap_cmd_data = NULL;
-    }
-    bmap->bmap_cmd_alloc = 0;
-    bmap->bmap_cmd_top = 0;
-}
-static void _blockmap_reallocate(blockmap* bmap)
-{
-    /* allocate bigger amount of command structures */
-    int i;
-    command* pnew;
-    bmap->bmap_cmd_alloc *= 2;
-    pnew = malloc(sizeof(command) * bmap->bmap_cmd_alloc);
-    for (i = 0;i < bmap->bmap_cmd_top;++i) {
-        int j;
-        pnew[i].com_kind = bmap->bmap_cmd_data[i].com_kind;
-        pnew[i].com_toktop = bmap->bmap_cmd_data[i].com_toktop;
-        for (j = 0;j < bmap->bmap_cmd_data[i].com_toktop;++j)
-            pnew[i].com_tokens[j] = bmap->bmap_cmd_data[i].com_tokens[j];
-    }
-    free(bmap->bmap_cmd_data);
-    bmap->bmap_cmd_data = pnew;
-}
-command* blockmap_insert(blockmap* bmap,int kind)
-{
-    if (kind>=0 && kind<block_kind_size && bmap->bmap_data[kind]==NULL) {
-        command* com;
-        if (bmap->bmap_cmd_top >= bmap->bmap_cmd_alloc)
-            _blockmap_reallocate(bmap);
-        com = bmap->bmap_cmd_data + bmap->bmap_cmd_top++;
-        command_init(com);
-        command_assign(com,kind,COMMAND_SETBLOCK,0,0,0,kind);
-        bmap->bmap_data[kind] = com;
-        return com;
-    }
-    return NULL;
-}
-void blockmap_insert_ex(blockmap* bmap,int* kinds,int count)
-{
-    int i;
-    for (i = 0;i < count;++i, ++kinds)
-        blockmap_insert(bmap,*kinds);
-}
-command* blockmap_lookup(blockmap* bmap,int kind,int x,int y,int z)
-{
-    command* com = NULL;
-    if (kind>=0 && kind<block_kind_size && (com = bmap->bmap_data[kind]) != NULL) {
-        command_assign_token_byflag(com,0,x);
-        command_assign_token_byflag(com,1,y);
-        command_assign_token_byflag(com,2,z);
-    }
-    return com;
-}
-command* blockmap_lookup_ex(blockmap* bmap,int kind,const coord* loc)
-{
-    command* com = NULL;
-    if (kind>=0 && kind<block_kind_size && (com = bmap->bmap_data[kind]) != NULL) {
-        command_assign_token_byflag(com,0,loc->coord_x);
-        command_assign_token_byflag(com,1,loc->coord_y);
-        command_assign_token_byflag(com,2,loc->coord_z);
-    }
-    return com;
-}
-
 /* general operation functions - the C IO library should be thread-safe, but not re-entrant; this
    is okay seeing as the order that messages are sent is not important */
 int get_message(char* buffer,int size)
@@ -739,8 +655,6 @@ static void async_info_destroy(struct async_info* ainfo)
 
 /* global data used by higher-level interface */
 static volatile short _minecontrol_api_itrack_state = 0;
-static blockmap _minecontrol_api_bmap;
-static pthread_mutex_t _minecontrol_api_protect_bmap = PTHREAD_MUTEX_INITIALIZER;
 static int _minecontrol_api_sync_top[_m_last+1], _minecontrol_api_sync_alloc[_m_last+1];
 static struct sync_info* _minecontrol_api_sync_hooks[_m_last+1];
 static int _minecontrol_api_async_top[_m_last+1], _minecontrol_api_async_alloc[_m_last+1];
@@ -750,7 +664,6 @@ static struct async_info* _minecontrol_api_async_hooks[_m_last+1];
 void init_minecontrol_api()
 {
     int i;
-    blockmap_init(&_minecontrol_api_bmap,32);
     for (i = 0;i <= _m_last;++i) {
         int j;
         /* allocate sync_info structures; initially provide 4 per type */
@@ -847,7 +760,6 @@ void end_input_tracking()
 void close_minecontrol_api()
 {
     int i;
-    blockmap_destroy(&_minecontrol_api_bmap);
     _minecontrol_api_itrack_state = 0;
     for (i = 0;i <= _m_last;++i) {
         int j;

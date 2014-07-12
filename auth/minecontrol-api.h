@@ -331,20 +331,6 @@ void command_assign_token(command* com,int position,const char* str);
 void command_assign_token_byflag(command* com,int position,int flag);
 int command_compile(const command* com,char* buffer,int size); /* return number of bytes written to 'buffer' */
 
-/* blockmap - used to buffer 'setblock' command strings for different block kinds */
-typedef struct {
-    command** bmap_data; /* array should contain same number of elements as enum block_kind */
-    int bmap_cmd_top;
-    int bmap_cmd_alloc;
-    command* bmap_cmd_data; /* only store COMMAND_SETBLOCK */
-} blockmap;
-void blockmap_init(blockmap* bmap,int defaultAllocation);
-void blockmap_destroy(blockmap* bmap);
-command* blockmap_insert(blockmap* bmap,int kind);
-void blockmap_insert_ex(blockmap* bmap,int* kinds,int count);
-command* blockmap_lookup(blockmap* bmap,int kind,int x,int y,int z); /* retrieve command structure for setblock with coord tokens replaced */
-command* blockmap_lookup_ex(blockmap* bmap,int kind,const coord* loc);
-
 /*************************************************************
  * FUNCTIONS: general operation ******************************
  *************************************************************
