@@ -11,13 +11,13 @@ struct tree_search_info
     const char* key;
 };
 
-/* misc helper functions */
-static void* init_dynamic_array(int* cap,size_t sz,size_t suggest)
+/* misc helper functions; these are declared in the tree.h interface file */
+void* init_dynamic_array(int* cap,int sz,int suggest)
 {
     *cap = suggest;
     return malloc(sz * suggest);
 }
-static void* grow_dynamic_array(void* arr,int* cap,size_t sz)
+void* grow_dynamic_array(void* arr,int* cap,int sz)
 {
     /* assume arr points to an array that is at capacity; expand it
        by twice that capacity */
@@ -77,7 +77,8 @@ int tree_key_compare(const struct tree_key* left,const struct tree_key* right)
 }
 static int _tree_key_compare(const void* left,const void* right)
 {
-    return tree_key_compare_raw(((const struct tree_key*)left)->key,((const struct tree_key*)right)->key);
+    /* qsort calls this function; assume that the operands are of type 'const struct tree_ket**' */
+    return tree_key_compare_raw((*(const struct tree_key**)left)->key,(*(const struct tree_key**)right)->key);
 }
 
 /* tree_node */
@@ -104,6 +105,23 @@ void tree_node_destroy(struct tree_node* node)
             free(node->children[i]);
         }
     }
+}
+void tree_node_destroy_ex(struct tree_node* node,void (*destructor)(void* item))
+{
+    int i;
+    for (i = 0;i < 3;++i) {
+        if (node->keys[i] != NULL) {
+            (*destructor)(node->keys[i]->payload);
+            tree_key_destroy(node->keys[i]);
+            free(node->keys[i]);
+        }
+    }
+    for (i = 0;i < 4;++i) {
+        if (node->children[i] != NULL) {
+            tree_node_destroy_ex(node->children[i],destructor);
+            free(node->children[i]);
+        }
+    }    
 }
 static int tree_node_insert_key(struct tree_node* node,struct tree_key* key,struct tree_node* left,struct tree_node* right)
 {
@@ -345,18 +363,20 @@ static void tree_construct_recursive(struct tree_node** nodes,int size,struct tr
         free(queue);
     }
 }
-void tree_construct(struct search_tree* tree,struct tree_key* keys,int size)
+void tree_construct(struct search_tree* tree,struct tree_key** keys,int size)
 {
+    /* 'keys' must be an array of pointers of size 'size' that point to
+       individual tree_key structures allocated on the heap */
     int i, j;
     struct tree_key** arr;
     int lvcap, lvtop;
     struct tree_key*** levels;
     const char* plast;
-    /* do size check */
+    /* check size requirements */
     if (size <= 0)
         return;
     /* we must ensure that the data is sorted */
-    qsort(keys,size,sizeof(struct tree_key),&_tree_key_compare);
+    qsort(keys,size,sizeof(struct tree_key*),&_tree_key_compare);
     /* create the key-value structures on the heap that will be used in the tree; ignore
        duplicate key values; note that 'i' will contain the array size to use */
     arr = malloc(sizeof(struct tree_key*) * (size+1));
@@ -365,13 +385,12 @@ void tree_construct(struct search_tree* tree,struct tree_key* keys,int size)
     plast = NULL;
     while (1) {
         if (plast != NULL)
-            while (j<size && tree_key_compare_raw(plast,keys[j].key) == 0)
+            while (j<size && tree_key_compare_raw(plast,keys[j]->key)==0)
                 ++j;
         if (j >= size)
             break;
-        arr[i] = malloc(sizeof(struct tree_key));
-        tree_key_init(arr[i],keys[j].key,keys[j].payload);
-        plast = keys[j].key;
+        arr[i] = keys[j];
+        plast = keys[j]->key;
         ++i, ++j;
     }
     arr[i] = NULL;
@@ -427,6 +446,13 @@ void tree_destroy(struct search_tree* tree)
 {
     if (tree->root != NULL) {
         tree_node_destroy(tree->root);
+        free(tree->root);
+    }
+}
+void tree_destroy_ex(struct search_tree* tree,void (*destructor)(void*))
+{
+    if (tree->root != NULL) {
+        tree_node_destroy_ex(tree->root,destructor);
         free(tree->root);
     }
 }

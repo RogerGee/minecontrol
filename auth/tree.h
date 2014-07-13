@@ -4,6 +4,10 @@
 #ifndef MINECONTROLAUTH_TREE_H
 #define MINECONTROLAUTH_TREE_H
 
+/* helper functions made public */
+void* init_dynamic_array(int* cap,int sz,int suggest);
+void* grow_dynamic_array(void* arr,int* cap,int sz);
+
 struct tree_key
 {
     /* store key and payload on heap */
@@ -23,6 +27,7 @@ struct tree_node
 };
 void tree_node_init(struct tree_node* node);
 void tree_node_destroy(struct tree_node* node);
+void tree_node_destroy_ex(struct tree_node* node,void (*destructor)(void* item));
 
 struct search_tree
 {
@@ -30,8 +35,9 @@ struct search_tree
     struct tree_node* root;
 };
 void tree_init(struct search_tree* tree);
-void tree_construct(struct search_tree* tree,struct tree_key* keys,int size);
+void tree_construct(struct search_tree* tree,struct tree_key** keys,int size);
 void tree_destroy(struct search_tree* tree);
+void tree_destroy_ex(struct search_tree* tree,void (*destructor)(void* item));
 /* return 1 if key already exists in tree */
 int tree_insert(struct search_tree* tree,const char* key,void* payload);
 /* return NULL if lookup failed */

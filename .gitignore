@@ -11,3 +11,5 @@ client.deb
 dpkg-server/usr/
 dpkg-client/usr/
 libminecontrol-api.so.*
+journal
+journal-debug
