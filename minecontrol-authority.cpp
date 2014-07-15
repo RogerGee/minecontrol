@@ -399,8 +399,17 @@ minecontrol_authority::execute_result minecontrol_authority::run_executable(str 
         str path = AUTHORITY_EXE_PATH;
         path.push_back(':');
         path += _serverDirectory;
+        // add the previous directory as well (this should be the 'minecraft' directory where
+        // minecontrol stores all the servers it creates); I include this so that a local user-created
+        // authority program can be shared by different server directory structures
+        path.push_back(':');
+        path += _serverDirectory;
+        path += "/..";
         if (setenv("PATH",path.c_str(),1) == -1)
             _exit((int)authority_exec_attr_fail);
+        // set current directory for process to server directory
+        if (chdir(_serverDirectory.c_str()) == -1)
+            _exit((int)authority_exec_cannot_run);
         // attempt to execute program
         if (execvpe(program,(char* const*)argv,environ) == -1) {
             if (errno == ENOENT)

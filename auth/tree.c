@@ -55,7 +55,7 @@ void tree_key_destroy(struct tree_key* tkey)
     if (tkey->payload != NULL)
         free(tkey->payload);
 }
-static int tree_key_compare_raw(const char* l,const char* r)
+int tree_key_compare_raw(const char* l,const char* r)
 {
     while (*l) {
         short i;
@@ -66,7 +66,7 @@ static int tree_key_compare_raw(const char* l,const char* r)
             if (c[i]>='A' && c[i]<='Z')
                 c[i] = c[i]-'A' + 'a';
         if (c[0] != c[1])
-            break;
+            return c[0] - c[1];
         ++l, ++r;
     }
     return *l - *r;
@@ -96,6 +96,23 @@ void tree_node_destroy(struct tree_node* node)
     for (i = 0;i < 3;++i) {
         if (node->keys[i] != NULL) {
             tree_key_destroy(node->keys[i]);
+            free(node->keys[i]);
+        }
+    }
+    for (i = 0;i < 4;++i) {
+        if (node->children[i] != NULL) {
+            tree_node_destroy(node->children[i]);
+            free(node->children[i]);
+        }
+    }
+}
+void tree_node_destroy_nopayload(struct tree_node* node)
+{
+    /* free everything but the payloads */
+    int i;
+    for (i = 0;i < 3;++i) {
+        if (node->keys[i] != NULL) {
+            free(node->keys[i]->key);
             free(node->keys[i]);
         }
     }
@@ -446,6 +463,13 @@ void tree_destroy(struct search_tree* tree)
 {
     if (tree->root != NULL) {
         tree_node_destroy(tree->root);
+        free(tree->root);
+    }
+}
+void tree_destroy_nopayload(struct search_tree* tree)
+{
+    if (tree->root != NULL) {
+        tree_node_destroy_nopayload(tree->root);
         free(tree->root);
     }
 }

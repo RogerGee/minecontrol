@@ -286,15 +286,23 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     }
     else
         mcraftdir = info.userInfo.homeDirectory;
+    if ( !mcraftdir.exists() ) {
+        if (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1)
+            return mcraft_start_server_filesystem_error;
+    }
     // compute the server working directory (as a subdirectory of the home directory and the minecraft
     // user directory); create the directory (and its parent directories where able) and change its owner
     // to the authenticated user
     mcraftdir += MINECRAFT_USER_DIRECTORY;
+    if ( !mcraftdir.exists() ) {
+        if (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1)
+            return mcraft_start_server_filesystem_error;
+    }
     mcraftdir += info.internalName;
     if ( !mcraftdir.exists() ) {
         if (!info.isNew)
             return mcraft_start_server_does_not_exist;
-        if (!mcraftdir.make(true) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1) // create sub-directories if need be
+        if (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1) // create sub-directories if need be
             return mcraft_start_server_filesystem_error;
     }
     else if (info.isNew)

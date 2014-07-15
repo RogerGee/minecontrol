@@ -7,16 +7,20 @@
 #include <ctype.h>
 #include <errno.h>
 
-/* globals */
+/* constants */
 static const char* PROGRAM_NAME;
+static const char* const AUTHORIZED_NAMESPACES[] = {
+    "*public*",
+    "*publicdomain*",
+    NULL
+};
 
 /* journaling options: these may be changed from the defaults by command-line arguments */
 static short journal_allow_tp = 0; /* teleport players upon request to journaled locations */
 static short journal_allow_tell = 1; /* whisper journaled location coordinates */
-static short journal_allow_dir = 1; /* whisper directions to journaled location */
+static short journal_allow_dir = 0; /* whisper directions to journaled location */
 static short journal_allow_private = 1; /* allow private namespaces for journaled locations */
 static short journal_allow_public = 0; /* allow a public namespace for journaled locations */
-static short journal_allow_invite = 1; /* allow invite to private namespace locations */
 
 /* journal location database: map user name to location tree which maps location name to location coordinates */
 static struct search_tree database; /* key -> struct search_tree */
@@ -25,13 +29,16 @@ static struct search_tree telerecord; /* key -> struct tree_key */
 /* provide a destructor for the payload of each key in 'database' */
 static void user_database_destructor(void* payload);
 
+/* command-line argument processing */
+static void process_command_line_options(int argc,const char* argv[]);
+
 /* file IO functions and constants */
 static const char* const JOURNAL_FILE = "journal";
 static void write_journal_file();
 static void read_journal_file();
 
 /* helpers */
-static int add_default_entry(const char* user,const char* label);
+static coord* add_default_entry(const char* user,const char* label);
 static int update_entry(const char* user,const char* label,coord* location);
 static coord* lookup_entry(const char* user,const char* label);
 static int remove_entry(const char* user,const char* label);
@@ -51,17 +58,22 @@ int main(int argc,const char* argv[])
 {
     fprintf(stderr,"%s: authority program start\n",argv[0]);
     PROGRAM_NAME = argv[0];
+    process_command_line_options(argc-1,argv+1);
     /* load database */
     init_minecontrol_api();
     tree_init(&database);
+    tree_init(&telerecord);
     read_journal_file();
     /* register callbacks for input events */
-    hook_tracking_function(&track_tell,m_chat,"%s journal tell %s");
-    hook_tracking_function(&track_dir,m_chat,"%s journal dir %s");
+    if (journal_allow_tell)
+        hook_tracking_function(&track_tell,m_chat,"%s journal tell %s");
+    if (journal_allow_dir)
+        hook_tracking_function(&track_dir,m_chat,"%s journal dir %s");
     hook_tracking_function(&track_add,m_chat,"%s journal add %s");
     hook_tracking_function(&track_up,m_chat,"%s journal up %s");
     hook_tracking_function(&track_rm,m_chat,"%s journal rm %s");
-    hook_tracking_function(&track_tp,m_chat,"%s journal tp %s");
+    if (journal_allow_tp)
+        hook_tracking_function(&track_tp,m_chat,"%s journal tp %s");
     hook_tracking_function(&track_portmsg,m_playerteleported,"%s %n %n %n");
     /* begin handling messages */
     if (begin_input_tracking(&track_main) == -1)
@@ -69,6 +81,7 @@ int main(int argc,const char* argv[])
     /* write database to file and cleanup */
     write_journal_file();
     close_minecontrol_api();
+    tree_destroy_nopayload(&telerecord);
     tree_destroy_ex(&database,&user_database_destructor);
     fprintf(stderr,"%s: authority program end\n",argv[0]);
     return 0;
@@ -80,6 +93,41 @@ void user_database_destructor(void* payload)
     /* payloads in 'database' are search trees; this
        function will be called to destroy them */
     tree_destroy((struct search_tree*)payload);
+}
+
+void process_command_line_options(int argc,const char* argv[])
+{
+    int i;
+    for (i = 0;i < argc;++i) {
+        if (strlen(argv[i])>=3 && argv[i][0]=='-') {
+            int state;
+            const char* op;
+            switch (argv[i][1]) {
+            case '-':
+                state = 0;
+                break;
+            case '+':
+                state = 1;
+                break;
+            default:
+                fprintf(stderr,"%s: bad option set state character; expected '-' or '+', found '%c'\n",PROGRAM_NAME,argv[i][1]);
+                continue;
+            }
+            op = argv[i] + 2;
+            if (strcmp(op,"tp") == 0)
+                journal_allow_tp = state;
+            else if (strcmp(op,"tell") == 0)
+                journal_allow_tell = state;
+            else if (strcmp(op,"dir") == 0)
+                journal_allow_dir = state;
+            else if (strcmp(op,"private") == 0)
+                journal_allow_private = state;
+            else if (strcmp(op,"public") == 0)
+                journal_allow_public = state;
+            else
+                fprintf(stderr,"%s: ignoring unrecognized option '%s'\n",PROGRAM_NAME,op);
+        }
+    }
 }
 
 static char seek_whitespace(FILE* pfile)
@@ -283,7 +331,9 @@ static void write_location_entry(FILE* journal,int* width,const struct tree_node
     i = 0;
     while (node->keys[i] != NULL) {
         coord* loc;
-        if (*width+strlen(node->keys[i]->key) > 115) {
+        *width += strlen(node->keys[i]->key);
+        *width += 15;
+        if (*width > 80) {
             fputs("\n\t",journal);
             *width = 0;
         }
@@ -292,8 +342,10 @@ static void write_location_entry(FILE* journal,int* width,const struct tree_node
         ++i;
     }
     i = 0;
-    while (node->children[i] != NULL)
+    while (node->children[i] != NULL) {
         write_location_entry(journal,width,node->children[i]);
+        ++i;
+    }
 }
 static void write_usernamespace_entry(FILE* journal,const struct tree_node* node)
 {
@@ -303,7 +355,8 @@ static void write_usernamespace_entry(FILE* journal,const struct tree_node* node
         static int width;
         fprintf(journal,"%s{\n\t",node->keys[i]->key);
         width = 0;
-        write_location_entry(journal,&width,((const struct search_tree*)node->keys[i]->payload)->root);
+        if (((const struct search_tree*)node->keys[i]->payload)->root != NULL)
+            write_location_entry(journal,&width,((const struct search_tree*)node->keys[i]->payload)->root);
         fputs("\n}",journal);
         ++i;
     }
@@ -325,7 +378,7 @@ void write_journal_file()
     fclose(journal);
 }
 
-int add_default_entry(const char* user,const char* label)
+coord* add_default_entry(const char* user,const char* label)
 {
     coord* loc;
     struct tree_key* key;
@@ -342,13 +395,18 @@ int add_default_entry(const char* user,const char* label)
         newentry = malloc(sizeof(struct search_tree*));
         tree_init(newentry);
         tree_insert(newentry,label,loc);
-        return tree_insert(&database,user,newentry);
+        if (tree_insert(&database,user,newentry) == 1) {
+            /* this frees 'loc' */
+            tree_destroy(newentry);
+            free(newentry);
+            return NULL;
+        }
     }
-    if (tree_insert((struct search_tree*)key->payload,label,loc) == 1) {
+    else if (tree_insert((struct search_tree*)key->payload,label,loc) == 1) {
         free(loc);
-        return 1;
+        return NULL;
     }
-    return 0;
+    return loc;
 }
 int update_entry(const char* user,const char* label,coord* location)
 {
@@ -369,7 +427,8 @@ coord* lookup_entry(const char* user,const char* label)
     key = tree_lookup(&database,user);
     if (key != NULL) {
         key = tree_lookup((struct search_tree*)key->payload,label);
-        return (coord*)key->payload;
+        if (key != NULL)
+            return (coord*)key->payload;
     }
     return NULL;
 }
@@ -379,55 +438,174 @@ int remove_entry(const char* user,const char* label)
     key = tree_lookup(&database,user);
     if (key != NULL)
         return tree_remove((struct search_tree*)key->payload,label);
-    return NULL;
+    return 1;
 }
 
+static int parse_label(const char* result[],char* player,char* label)
+{
+    /* the user provided a label; this label is of the form '[namespace:]label';
+       the namespace is a qualifier that groups location labels together; if no
+       namespace is explicitly given, then the player's name is used */
+    int i;
+    i = 0;
+    while (label[i] && label[i]!=':')
+        ++i;
+    if (label[i] == ':') {
+        const char* const* auth;
+        label[i] = 0;
+        result[0] = label;
+        result[1] = label + i+1;
+        /* check to see if the player has access to the namespace; this means that
+           the namespace is either one of the AUTHORIZED_NAMESPACES or is the player's
+           namespace */
+        if (journal_allow_public) {
+            auth = AUTHORIZED_NAMESPACES;
+            while (*auth != NULL) {
+                if (tree_key_compare_raw(*auth,label) == 0)
+                    break;
+                ++auth;
+            }
+        }
+        else
+            auth = NULL;
+        if ((auth==NULL || *auth==NULL) && (!journal_allow_private || tree_key_compare_raw(player,label)!=0)) {
+            issue_command_str("tellraw %s {text:\"Access to namespace %s is not authorized\",color:\"red\"}",player,label);
+            return 1;
+        }
+    }
+    else {
+        if (!journal_allow_private) {
+            issue_command_str("tellraw %s {text:\"Access to private namespace is not allowed\",color:\"red\"}",player);
+            return 1;
+        }
+        result[0] = player;
+        result[1] = label;
+    }
+    return 0;
+}
+static coord* preop_task(const char* label[],char* player,char* inputlabel)
+{
+    /* parse label and lookup record */
+    coord* record;
+    if (parse_label(label,player,inputlabel) == 1)
+        return NULL;
+    record = lookup_entry(label[0],label[1]);
+    if (record == NULL)
+        issue_command_str("tellraw %s {text:\"Location does not exist in database\",color:\"red\"}",player);
+    return record;
+}
 int track_main(int kind,const char* message)
 {
+    /* handle any other messages here */
+
+    return 0;
 }
 int track_tell(int kind,const char* message,const callback_parameter* params)
 {
+    coord* record;
+    const char* label[2];
+    record = preop_task(label,params->s_tokens[0],params->s_tokens[1]);
+    if (record != NULL) {
+        issue_command_str("tellraw %s {text:\"%s:%s -> {%c}\",color:\"blue\"}",params->s_tokens[0],label[0],label[1],*record);
+        return 0;
+    }
+    return 1;
 }
 int track_dir(int kind,const char* message,const callback_parameter* params)
 {
+    coord* record;
+    const char* label[2];
+    record = preop_task(label,params->s_tokens[0],params->s_tokens[1]);
+    if (record != NULL) {
+
+        return 0;
+    }
+    return 1;
 }
 int track_add(int kind,const char* message,const callback_parameter* params)
 {
-    int i;
-    const char* label, nspace;
-    /* the user provided a label (params->s_tokens[1]); this label is of the 
-       form '[namespace:]label'; the namespace is a qualifier that groups 
-       location labels together; if no namespace is explicitly given, then
-       the player's name is used */
-    i = 0;
-    while (params->s_tokens[1][i] && params->s_tokens[1][i]!=':')
-        ++i;
-    if (params->s_tokens[1][i] == ':') {
-        params->s_tokens[1][i] = 0;
-        label = params->s_tokens[1] + i+1;
-        nspace = params->s_tokens[1];
+    coord* record;
+    struct tree_key* key;
+    const char* label[2];
+    if (parse_label(label,params->s_tokens[0],params->s_tokens[1]) != 1) {
+        /* attempt to add a default entry using the user:label pair */
+        record = add_default_entry(label[0],label[1]);
+        if (record != NULL) {
+            /* create or update an entry in the teleport record to catch later teleport messages */
+            key = tree_lookup(&telerecord,params->s_tokens[0]);
+            if (key == NULL)
+                tree_insert(&telerecord,params->s_tokens[0],record);
+            else
+                key->payload = record;
+            /* finally, teleport the player to their current location so as to prompt a
+               teleport message that indicates their current location */
+            issue_command_str("tp %s ~ ~ ~",params->s_tokens[0]);
+            issue_command_str("tellraw %s {text:\"Added location to database\",color:\"blue\"}",params->s_tokens[0]);
+            return 0;
+        }
+        else
+            issue_command_str("tellraw %s {text:\"The label %s:%s is already in use\",color:\"red\"}",params->s_tokens[0],label[0],label[1]);
     }
-    else {
-        label = params->s_tokens[1];
-        nspace = params->s_tokens[0];
-    }
-    /* attempt to add a default entry using the label */
-
-    /* create an entry in the teleport record to catch later teleport messages */
-
-    /* finally, teleport the player to their current location so as to prompt a
-       teleport message that indicates their current location */
-
+    return 1;
 }
 int track_up(int kind,const char* message,const callback_parameter* params)
 {
+    coord* record;
+    const char* label[2];
+    record = preop_task(label,params->s_tokens[0],params->s_tokens[1]);
+    if (record != NULL) {
+        struct tree_key* key;
+        /* update or create an entry in the teleport record to catch later teleport messages */
+        key = tree_lookup(&telerecord,params->s_tokens[0]);
+        if (key == NULL)
+            tree_insert(&telerecord,params->s_tokens[0],record);
+        else
+            key->payload = record;
+        /* issue the teleport command so when can get the player's location */
+        issue_command_str("tp %s ~ ~ ~",params->s_tokens[0]);
+        return 0;
+    }
+    return 1;
 }
 int track_rm(int kind,const char* message,const callback_parameter* params)
 {
+    const char* label[2];
+    if (parse_label(label,params->s_tokens[0],params->s_tokens[1]) != 1) {
+        if (remove_entry(label[0],label[1]) != 1) {
+            issue_command_str("tellraw %s {text:\"Location removed from database\",color:\"blue\"}",params->s_tokens[0]);
+            return 0;
+        }
+        else
+            issue_command_str("tellraw %s {text:\"Location does not exist in database\",color:\"blue\"}",params->s_tokens[0]);
+    }
+    return 1;
 }
 int track_tp(int kind,const char* message,const callback_parameter* params)
 {
+    coord* record;
+    const char* label[2];
+    record = preop_task(label,params->s_tokens[0],params->s_tokens[1]);
+    if (record != NULL) {
+        issue_command_str("tellraw %s {text:\"Teleported to location %s:%s\",color:\"blue\"}",params->s_tokens[0],label[0],label[1]);
+        issue_command_str("tp %s %c",params->s_tokens[0],*record);
+        return 0;
+    }
+    return 1;
 }
 int track_portmsg(int kind,const char* message,const callback_parameter* params)
-{   
+{
+    /* see if there is a record for the player awaiting assignment */
+    struct tree_key* key;
+    key = tree_lookup(&telerecord,params->s_tokens[0]);
+    if (key!=NULL && key->payload!=NULL) {
+        /* assign coordinates received from tp result; truncate from float to int */
+        coord* record = (coord*)key->payload;
+        record->coord_x = (int)params->f_tokens[0];
+        record->coord_y = (int)params->f_tokens[1];
+        record->coord_z = (int)params->f_tokens[2];
+        /* mark the record as being nil */
+        key->payload = NULL;
+        return 0;
+    }
+    return 1;
 }

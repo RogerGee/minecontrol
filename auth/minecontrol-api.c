@@ -686,7 +686,7 @@ int hook_tracking_function(callback_sync func,int kind,const char* format)
             int i;
             struct sync_info* pnew;
             _minecontrol_api_sync_alloc[kind] *= 2;
-            pnew = malloc(sizeof(struct sync_info*) * _minecontrol_api_sync_alloc[kind]);
+            pnew = malloc(sizeof(struct sync_info) * _minecontrol_api_sync_alloc[kind]);
             for (i = 0;i < _minecontrol_api_sync_top[kind];++i)
                 pnew[i] = _minecontrol_api_sync_hooks[kind][i];
             free(_minecontrol_api_sync_hooks[kind]);
@@ -704,7 +704,7 @@ int hook_tracking_function_async(callback_async func,int kind,const char* format
             int i;
             struct async_info* pnew;
             _minecontrol_api_async_alloc[kind] *= 2;
-            pnew = malloc(sizeof(struct async_info*) * _minecontrol_api_async_alloc[kind]);
+            pnew = malloc(sizeof(struct async_info) * _minecontrol_api_async_alloc[kind]);
             for (i = 0;i < _minecontrol_api_async_top[kind];++i)
                 pnew[i] = _minecontrol_api_async_hooks[kind][i];
             free(_minecontrol_api_async_hooks[kind]);
