@@ -156,7 +156,7 @@ str minecraft_server_message::get_gist_string() const
     case gist_player_achievement:
         return "achievement";
     case gist_player_teleported:
-        return "player-teleport";
+        return "player-teleported";
     default:
         return DEFAULT;
     }

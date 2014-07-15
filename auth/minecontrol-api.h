@@ -54,6 +54,7 @@ typedef enum {
     m_playerdropped,
     m_playerleave,
     m_playerachieve,
+    m_playerteleported,
     m_unknown,
     _m_last = m_unknown
 } message_kind;
@@ -69,6 +70,7 @@ typedef enum {
 #define MESSAGE_PLAYER_LOST_CONNECTION "lost-connection"
 #define MESSAGE_PLAYER_LEAVE "leave"
 #define MESSAGE_PLAYER_ACHIEVEMENT "achievement"
+#define MESSAGE_PLAYER_TELEPORTED "player-teleported"
 #define MESSAGE_UNKNOWN "unknown"
 extern const char* const MESSAGE_KINDS[];
 
