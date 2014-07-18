@@ -22,11 +22,11 @@ STD_LIB_DIR=$ROOT_DIR/usr/lib
 # source files
 MAN1_PAGES=minecontrold.1
 MAN5_PAGES="minecontrol.exec.5 minecontrol.init.5"
-AUTH_LIBRARY_REALNAME=libminecontrolauth.so.1.0.0
-AUTH_LIBRARY_SONAME=libminecontrolauth.so.1
-AUTH_LIBRARY_LINKNAME=libminecontrolauth.so
+AUTH_LIBRARY_REALNAME=libminecontrol-api.so.1.0.0
+AUTH_LIBRARY_SONAME=libminecontrol-api.so.1
+AUTH_LIBRARY_LINKNAME=libminecontrol-api.so
 AUTH_LIBRARY=auth/$AUTH_LIBRARY_REALNAME
-AUTH_PROGRAMS=auth/journal auth/construct auth/spawner
+AUTH_PROGRAMS=auth/journal #auth/construct auth/spawner
 
 # destination files
 CONTROL_FILE=$INFO_DIR/control

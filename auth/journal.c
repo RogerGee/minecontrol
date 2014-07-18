@@ -1,4 +1,5 @@
 /* journal.c - minecontrol authority program for location journaling */
+#define _GNU_SOURCE
 #include "minecontrol-api.h"
 #include "tree.h"
 #include <stdlib.h>
@@ -6,6 +7,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <sys/time.h>
+#include <signal.h>
 
 /* constants */
 static const char* PROGRAM_NAME;
@@ -15,16 +18,22 @@ static const char* const AUTHORIZED_NAMESPACES[] = {
     NULL
 };
 
+/* signal handlers and alarm functionality */
+static int setup_signal(int sig,void (*handler)(int));
+static int setup_alarm(unsigned int seconds);
+static void termination_handler(int);
+static void alarm_handler(int);
+
 /* journaling options: these may be changed from the defaults by command-line arguments */
 static short journal_allow_tp = 0; /* teleport players upon request to journaled locations */
 static short journal_allow_tell = 1; /* whisper journaled location coordinates */
-static short journal_allow_dir = 0; /* whisper directions to journaled location */
 static short journal_allow_private = 1; /* allow private namespaces for journaled locations */
 static short journal_allow_public = 0; /* allow a public namespace for journaled locations */
 
 /* journal location database: map user name to location tree which maps location name to location coordinates */
-static struct search_tree database; /* key -> struct search_tree */
-static struct search_tree telerecord; /* key -> struct tree_key */
+static struct search_tree database; /* key -> struct search_tree : key -> coord */
+static struct search_tree telerecord; /* key -> coord* */
+static short database_updated = 0; /* becomes 1 if the database is modified in any way */
 
 /* provide a destructor for the payload of each key in 'database' */
 static void user_database_destructor(void* payload);
@@ -40,13 +49,13 @@ static void read_journal_file();
 /* helpers */
 static coord* add_default_entry(const char* user,const char* label);
 static int update_entry(const char* user,const char* label,coord* location);
+
 static coord* lookup_entry(const char* user,const char* label);
 static int remove_entry(const char* user,const char* label);
 
 /* callback functions for input tracking */
 static int track_main(int kind,const char* message);
 static int track_tell(int kind,const char* message,const callback_parameter* params);
-static int track_dir(int kind,const char* message,const callback_parameter* params);
 static int track_add(int kind,const char* message,const callback_parameter* params);
 static int track_up(int kind,const char* message,const callback_parameter* params);
 static int track_rm(int kind,const char* message,const callback_parameter* params);
@@ -57,6 +66,18 @@ static int track_portmsg(int kind,const char* message,const callback_parameter* 
 int main(int argc,const char* argv[])
 {
     fprintf(stderr,"%s: authority program start\n",argv[0]);
+    /* setup signal handler for termination events */
+    if (setup_signal(SIGTERM,&termination_handler)==-1 || setup_signal(SIGINT,&termination_handler)==-1
+        || setup_signal(SIGPIPE,&termination_handler)==-1) {
+        fprintf(stderr,"%s: could not setup signal handlers\n",argv[0]);
+        return 1;
+    }
+    /* setup alarm handler */
+    if (setup_alarm(3600) == -1) {
+        fprintf(stderr,"%s: could not setup alarm signal handler\n",argv[0]);
+        return 1;
+    }
+    /* handle command-line arguments */
     PROGRAM_NAME = argv[0];
     process_command_line_options(argc-1,argv+1);
     /* load database */
@@ -67,8 +88,6 @@ int main(int argc,const char* argv[])
     /* register callbacks for input events */
     if (journal_allow_tell)
         hook_tracking_function(&track_tell,m_chat,"%s journal tell %s");
-    if (journal_allow_dir)
-        hook_tracking_function(&track_dir,m_chat,"%s journal dir %s");
     hook_tracking_function(&track_add,m_chat,"%s journal add %s");
     hook_tracking_function(&track_up,m_chat,"%s journal up %s");
     hook_tracking_function(&track_rm,m_chat,"%s journal rm %s");
@@ -81,13 +100,51 @@ int main(int argc,const char* argv[])
     /* write database to file and cleanup */
     write_journal_file();
     close_minecontrol_api();
-    tree_destroy_nopayload(&telerecord);
+    tree_destroy(&telerecord);
     tree_destroy_ex(&database,&user_database_destructor);
-    fprintf(stderr,"%s: authority program end\n",argv[0]);
+    fprintf(stderr,"%s: authority program exit\n",argv[0]);
     return 0;
 }
 
 /* function definitions */
+int setup_signal(int sig,void (*handler)(int))
+{
+    struct sigaction action;
+    memset(&action,0,sizeof(struct sigaction));
+    action.sa_handler = handler;
+    return sigaction(sig,&action,NULL);
+}
+int setup_alarm(unsigned int seconds)
+{
+    struct itimerval timer;
+    memset(&timer,0,sizeof(struct itimerval));
+    timer.it_interval.tv_sec = seconds;
+    timer.it_value.tv_sec = seconds;
+    if (setup_signal(SIGALRM,&alarm_handler) == -1)
+        return -1;
+    if (setitimer(ITIMER_REAL,&timer,NULL) == -1)
+        return -1;
+    return 0;
+}
+void termination_handler(int signal)
+{
+    fprintf(stderr,"%s: authority program exit by signal\n",PROGRAM_NAME);
+    write_journal_file();
+    close_minecontrol_api();
+    tree_destroy_nopayload(&telerecord);
+    tree_destroy_ex(&database,&user_database_destructor);
+    _exit(0);
+}
+void alarm_handler(int signal)
+{
+    /* let's dump the database to a file every hour if it's been updated
+       since the last interval */
+    if (database_updated) {
+        write_journal_file();
+        database_updated = 0;
+    }
+}
+
 void user_database_destructor(void* payload)
 {
     /* payloads in 'database' are search trees; this
@@ -118,8 +175,6 @@ void process_command_line_options(int argc,const char* argv[])
                 journal_allow_tp = state;
             else if (strcmp(op,"tell") == 0)
                 journal_allow_tell = state;
-            else if (strcmp(op,"dir") == 0)
-                journal_allow_dir = state;
             else if (strcmp(op,"private") == 0)
                 journal_allow_private = state;
             else if (strcmp(op,"public") == 0)
@@ -331,6 +386,10 @@ static void write_location_entry(FILE* journal,int* width,const struct tree_node
     i = 0;
     while (node->keys[i] != NULL) {
         coord* loc;
+        /* do an in-order traversal so check the child first */
+        if (node->children[i] != NULL)
+            write_location_entry(journal,width,node->children[i]);
+        /* write the location entry to file */
         *width += strlen(node->keys[i]->key);
         *width += 15;
         if (*width > 80) {
@@ -341,11 +400,8 @@ static void write_location_entry(FILE* journal,int* width,const struct tree_node
         fprintf(journal,"[%s:%d,%d,%d] ",node->keys[i]->key,loc->coord_x,loc->coord_y,loc->coord_z);
         ++i;
     }
-    i = 0;
-    while (node->children[i] != NULL) {
+    if (node->children[i] != NULL)
         write_location_entry(journal,width,node->children[i]);
-        ++i;
-    }
 }
 static void write_usernamespace_entry(FILE* journal,const struct tree_node* node)
 {
@@ -353,6 +409,10 @@ static void write_usernamespace_entry(FILE* journal,const struct tree_node* node
     i = 0;
     while (node->keys[i] != NULL) {
         static int width;
+        /* do an in-order traversal so check the child first */
+        if (node->children[i] != NULL)
+            write_usernamespace_entry(journal,node->children[i]);
+        /* write the namespace entry to file */
         fprintf(journal,"%s{\n\t",node->keys[i]->key);
         width = 0;
         if (((const struct search_tree*)node->keys[i]->payload)->root != NULL)
@@ -360,8 +420,7 @@ static void write_usernamespace_entry(FILE* journal,const struct tree_node* node
         fputs("\n}",journal);
         ++i;
     }
-    i = 0;
-    while (node->children[i] != NULL)
+    if (node->children[i] != NULL)
         write_usernamespace_entry(journal,node->children[i]);
 }
 void write_journal_file()
@@ -511,17 +570,6 @@ int track_tell(int kind,const char* message,const callback_parameter* params)
     }
     return 1;
 }
-int track_dir(int kind,const char* message,const callback_parameter* params)
-{
-    coord* record;
-    const char* label[2];
-    record = preop_task(label,params->s_tokens[0],params->s_tokens[1]);
-    if (record != NULL) {
-
-        return 0;
-    }
-    return 1;
-}
 int track_add(int kind,const char* message,const callback_parameter* params)
 {
     coord* record;
@@ -541,6 +589,7 @@ int track_add(int kind,const char* message,const callback_parameter* params)
                teleport message that indicates their current location */
             issue_command_str("tp %s ~ ~ ~",params->s_tokens[0]);
             issue_command_str("tellraw %s {text:\"Added location to database\",color:\"blue\"}",params->s_tokens[0]);
+            database_updated = 1;
             return 0;
         }
         else
@@ -563,6 +612,8 @@ int track_up(int kind,const char* message,const callback_parameter* params)
             key->payload = record;
         /* issue the teleport command so when can get the player's location */
         issue_command_str("tp %s ~ ~ ~",params->s_tokens[0]);
+        issue_command_str("tellraw %s {text:\"Location updated\",color:\"blue\"}",params->s_tokens[0]);
+        database_updated = 1;
         return 0;
     }
     return 1;
@@ -573,10 +624,11 @@ int track_rm(int kind,const char* message,const callback_parameter* params)
     if (parse_label(label,params->s_tokens[0],params->s_tokens[1]) != 1) {
         if (remove_entry(label[0],label[1]) != 1) {
             issue_command_str("tellraw %s {text:\"Location removed from database\",color:\"blue\"}",params->s_tokens[0]);
+            database_updated = 1;
             return 0;
         }
         else
-            issue_command_str("tellraw %s {text:\"Location does not exist in database\",color:\"blue\"}",params->s_tokens[0]);
+            issue_command_str("tellraw %s {text:\"Location does not exist in database\",color:\"red\"}",params->s_tokens[0]);
     }
     return 1;
 }
@@ -603,6 +655,7 @@ int track_portmsg(int kind,const char* message,const callback_parameter* params)
         record->coord_x = (int)params->f_tokens[0];
         record->coord_y = (int)params->f_tokens[1];
         record->coord_z = (int)params->f_tokens[2];
+        database_updated = 1;
         /* mark the record as being nil */
         key->payload = NULL;
         return 0;

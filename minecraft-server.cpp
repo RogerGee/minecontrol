@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <pwd.h>
+#include <time.h>
 #include <errno.h>
 #include <rlibrary/rfilename.h>
 #include <rlibrary/rutility.h>
@@ -633,7 +634,13 @@ void minecraft_server::_check_extended_options_child(const minecraft_server_info
 }
 void minecraft_server::_setup_error_file(const str& name)
 {
-    stringstream ss("BEGIN error log: ");
+    time_t t;
+    char buf[40];
+    tm tmval;
+    stringstream ss("BEGIN error log ");
+    time(&t);
+    strftime(buf,40,"%a %b %d %H:%M:%S",localtime_r(&t,&tmval));
+    ss << '[' << buf << "] ";
     ss << name;
     for (size_type i = ss.get_device().length();i<80;++i)
         ss.put('-');
@@ -645,7 +652,14 @@ void minecraft_server::_close_error_file(const str& name)
     if (_fderr != -1) {
         str s;
         str part = name;
-        part += ": error log END";
+        char buf[40];
+        time_t t;
+        tm tmval;
+        time(&t);
+        strftime(buf,40,"%a %b %d %H:%M:%S",localtime_r(&t,&tmval));
+        part += " [";
+        part += buf;
+        part += "] error log END";
         if (part.length() < 80) {
             size_type len = 80 - part.length();
             for (size_type i = 0;i<len;++i)

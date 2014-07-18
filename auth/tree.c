@@ -665,3 +665,21 @@ int tree_remove(struct search_tree* tree,const char* key)
     }
     return 1;
 }
+static void tree_traversal_inorder_recursive(struct tree_node* node,void (*callback)(struct tree_key*))
+{
+    int i;
+    i = 0;
+    while (node->keys[i] != NULL) {
+        if (node->children[i] != NULL)
+            tree_traversal_inorder_recursive(node->children[i],callback);
+        (*callback)(node->keys[i]);
+        ++i;
+    }
+    if (node->children[i] != NULL)
+        tree_traversal_inorder_recursive(node->children[i],callback);
+}
+void tree_traversal_inorder(struct search_tree* tree,void (*callback)(struct tree_key*))
+{
+    if (tree->root != NULL)
+        tree_traversal_inorder_recursive(tree->root,callback);
+}

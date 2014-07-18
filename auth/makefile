@@ -14,7 +14,7 @@ AUTH_LIB_LINKNAME = libmineconrol-api.so
 ifeq ($(MAKECMDGOALS),debug)
 OBJDIR = $(OBJDIR_NAME_DEBUG)
 COMPILE = gcc -ansi -c -g -o 
-COMPILE_SHARED = gcc -ansi -fPIC -c -g -o 
+COMPILE_SHARED = gcc -ansi -c -g -o 
 LINK = gcc -g -pthread -o
 else
 OBJDIR = $(OBJDIR_NAME)

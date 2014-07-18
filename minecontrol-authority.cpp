@@ -217,7 +217,7 @@ str minecraft_server_message::get_gist_string() const
     return *format == *source;
 }
 
-const char* const minecontrol_authority::AUTHORITY_EXE_PATH = "/usr/lib/minecontrol:/usr/local/lib/minecontrol"; // standard authority script location
+const char* const minecontrol_authority::AUTHORITY_EXE_PATH = "/usr/lib/minecontrol:/usr/local/lib/minecontrol"; // standard authority program location
 const char* const minecontrol_authority::AUTHORITY_EXEC_FILE = "minecontrol.exec";
 minecontrol_authority::minecontrol_authority(const pipe& ioChannel,int fderr,const str& serverDirectory,const user_info& userInfo)
     : _iochannel(ioChannel), _fderr(fderr), _serverDirectory(serverDirectory), _login(userInfo)
@@ -228,7 +228,7 @@ minecontrol_authority::minecontrol_authority(const pipe& ioChannel,int fderr,con
     _threadID = -1;
     _consoleEnabled = true;
     _threadCondition = true;
-    // start default scripts from _serverDirectory/AUTHORITY_EXEC_FILE
+    // start default programs from _serverDirectory/AUTHORITY_EXEC_FILE
     file execFile;
     str execFileName = _serverDirectory;
     execFileName.push_back('/');
@@ -621,7 +621,7 @@ rstream& minecraft_controller::operator <<(rstream& stream,minecontrol_authority
         return stream << "Authority program started successfully";
     else if (result == minecontrol_authority::authority_exec_okay_exited)
         return stream << "Authority program started and completed successfully";
-    stream << "Authority script failed execution: ";
+    stream << "Authority program execution failed: ";
     if (result == minecontrol_authority::authority_exec_cannot_run)
         stream << "the program couldn't be executed";
     else if (result == minecontrol_authority::authority_exec_access_denied)

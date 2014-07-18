@@ -37,7 +37,6 @@ static void process_short_option(const char* option);
 static void process_long_option(const char* option);
 static void daemonize(); // turns this process into a daemon
 static void shutdown_handler(int); // recieves signals from system for server shutdown
-static void sigpipe_handler(int); // recieves signals from system in the event that output fails on a network connection
 static void create_server_sockets(); // creates server sockets
 static void local_operation(); // accepts local connections; manages the thread that runs remote_operation
 static void* remote_operation(void*); // started on a new thread by local_operation; accepts remote connections
@@ -60,8 +59,8 @@ int main(int argc,const char* argv[])
         fatal_error("cannot create signal handler for SIGTERM");
     if (::signal(SIGINT,&shutdown_handler) == SIG_ERR)
         fatal_error("cannot create signal handler for SIGINT");
-    if (::signal(SIGPIPE,&sigpipe_handler) == SIG_ERR)
-        fatal_error("cannot create signal handler for SIGPIPE");
+    if (::signal(SIGPIPE,SIG_IGN) == SIG_ERR)
+        fatal_error("cannot set disposition for signal SIGPIPE");
     // attempt to bind server sockets
     create_server_sockets();
     // become a daemon
@@ -161,11 +160,6 @@ void shutdown_handler(int sig)
     remote.shutdown();
 }
 
-void sigpipe_handler(int)
-{
-    // ignore this signal
-}
-
 void create_server_sockets()
 {
     domain_socket_address domainAddress(DOMAIN_NAME);
@@ -225,8 +219,9 @@ void minecraft_controller_log_stream::_outDevice()
 {
     char sbuffer[40];
     time_t tp;
+    tm tmval;
     ::time(&tp);
-    ::strftime(sbuffer,40,"%a %b %d %H:%M:%S",localtime(&tp));
+    ::strftime(sbuffer,40,"%a %b %d %H:%M:%S",localtime_r(&tp,&tmval));
     // send our local buffer to the standard console
     // add name and process id
     stdConsole << '[' << sbuffer << "] " << minecontrold::get_server_name()

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>
 #include <pthread.h>
 
 const char* const MESSAGE_KINDS[] = {
@@ -416,6 +417,8 @@ int get_message(char* buffer,int size)
     /* read a line of input */
     if (fgets(buffer,size,stdin) == NULL) {
         buffer[0] = 0;
+        if (errno == EINTR)
+            return m_intr;
         return m_eoi;
     }
     /* get first token */
@@ -444,8 +447,11 @@ int get_message_ex(message* msg)
 {
     char* p;
     char buffer[MAX_BUFFER];
-    if (fgets(buffer,MAX_BUFFER,stdin) == NULL)
+    if (fgets(buffer,MAX_BUFFER,stdin) == NULL) {
+        if (errno == EINTR)
+            return m_intr;
         return m_eoi;
+    }
     /* remove endline from buffer */
     p = buffer;
     while (*p)
@@ -731,6 +737,8 @@ int begin_input_tracking(callback hookMain)
                 continue;
             /* invoke the main hook; send m_eoi so that it can quit too */
             (*hookMain)(kind,msg.msg_buffer);
+            if (kind == m_intr) /* interrupted */
+                continue;
             if (kind == m_eoi) /* end of input */
                 break;
             /* try to invoke a callback on each registered function of the current

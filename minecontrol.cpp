@@ -647,9 +647,12 @@ void console(session_state& session)
         session.mtx.lock();
         if ((ch = getch()) == ERR) {
             /* sleeping here is of the utmost importance; it
-               gives the other thread a chance to catch up */
+               gives the other thread a chance to catch up; we
+               must also be mindful of wasting CPU time when the
+               user is typing nothing; so, as a hack, I assume they
+               aren't really typing much if the buffer is empty */
             session.mtx.unlock();
-            usleep(500);
+            usleep(top==0 ? 50000 : 500);
             continue;
         }
         if ((ch&A_CHARTEXT)=='\n' || top==BUFFER_MAX-1) {

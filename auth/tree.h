@@ -49,5 +49,7 @@ int tree_insert(struct search_tree* tree,const char* key,void* payload);
 struct tree_key* tree_lookup(struct search_tree* tree,const char* key);
 /* return 1 if removal failed */
 int tree_remove(struct search_tree* tree,const char* key);
+/* traverse the tree and call 'callback' on each key */
+void tree_traversal_inorder(struct search_tree* tree,void (*callback)(struct tree_key*));
 
 #endif
