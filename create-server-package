@@ -16,7 +16,7 @@ BINARY_DIR=$ROOT_DIR/usr/bin
 INITD_DIR=$ROOT_DIR/etc/init.d
 MAN1_DIR=$ROOT_DIR/usr/share/man/man1
 MAN5_DIR=$ROOT_DIR/usr/share/man/man5
-LIB_DIR=$ROOT_DIR/usr/lib/minecontrold
+LIB_DIR=$ROOT_DIR/usr/lib/minecontrol
 STD_LIB_DIR=$ROOT_DIR/usr/lib
 
 # source files
@@ -81,9 +81,10 @@ cp $MAN5_PAGES $MAN5_DIR
 cp $AUTH_LIBRARY $LIB_DIR
 cp $AUTH_PROGRAMS $LIB_DIR
 
-# set up shared library sym-links
-ln -s $LIB_DIR/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_SONAME
-ln -s $LIB_DIR/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_LINKNAME
+# set up shared library sym-links; the so-name link is created by ldconfig
+ln -s $LIB_DIR/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_REALNAME
+#ln -s $LIB_DIR/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_SONAME
+#ln -s $LIB_DIR/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_LINKNAME
 
 # compress man pages
 gzip -9 $MAN1_DIR/*.1

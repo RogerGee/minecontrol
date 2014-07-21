@@ -55,6 +55,7 @@ static int remove_entry(const char* user,const char* label);
 
 /* callback functions for input tracking */
 static int track_main(int kind,const char* message);
+static int track_help(int kind,const char* message,const callback_parameter* params);
 static int track_tell(int kind,const char* message,const callback_parameter* params);
 static int track_add(int kind,const char* message,const callback_parameter* params);
 static int track_up(int kind,const char* message,const callback_parameter* params);
@@ -557,6 +558,11 @@ int track_main(int kind,const char* message)
 {
     /* handle any other messages here */
 
+    return 0;
+}
+int track_help(int kind,const char* message,const callback_parameter* params)
+{
+    issue_command_str("tellraw %s {text:\"Commands: tell|add|up|rm|tp\",color:\"gray\"}");
     return 0;
 }
 int track_tell(int kind,const char* message,const callback_parameter* params)

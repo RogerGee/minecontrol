@@ -250,13 +250,21 @@ The command\-line used to execute the new authority program
 .RE
 .TP
 .B STOP
-The \fBSTOP\fR command causes the minecontrol server to terminate the specified running Minecraft server.
+The \fBSTOP\fR command causes the minecontrol server to terminate a process that minecontrol is running. This might be a
+Minecraft server process or an authority process. If just \fBServerID\fR is specified then the Minecraft server with the
+specified ID is stopped along with any authority processes running alongside it. If \fBAuthPID\fR is specified, then only
+the specified authority process is stopped granted it is associated with the specified Minecraft server.
 
 Fields:
 .RS
 .TP
 \fBServerID: \fIserver\-id\fR
-The ID value that identifies the Minecraft server; this value is obtained by a user from the response to a \fBSTATUS\fR command
+The ID value that identifies the Minecraft server; this value is obtained by a user from the response to a \fBSTATUS\fR command;
+note that this is an ID assigned by the minecontrol server and not a system process ID
+.TP
+\fBAuthPID: \fIauthority\-process\-id\fR
+The process ID of the authority process to stop; this value can be obtained by a user from the \fBSTATUS\fR command output; note that 
+this is an actual system process ID, not an ID designated by the minecontrol server
 .RE
 .TP
 .B CONSOLE

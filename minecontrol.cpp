@@ -645,7 +645,7 @@ void console(session_state& session)
     while (session.control) {
         chtype ch;
         session.mtx.lock();
-        if ((ch = getch()) == ERR) {
+        if ((ch = getch()) == chtype(ERR)) {
             /* sleeping here is of the utmost importance; it
                gives the other thread a chance to catch up; we
                must also be mindful of wasting CPU time when the
@@ -714,15 +714,27 @@ void console(session_state& session)
 
 void stop(session_state& session)
 {
-    str tok;
+    size_type i, j;
+    str tok, authTok;
     session.inputStream >> tok;
     if (tok.length() == 0) {
         stdConsole << "Enter ID of running server: ";
         stdConsole >> tok;
     }
+    i = 0;
+    while (i<tok.length() && tok[i]!=':')
+        ++i;
+    for (j = i+1;j < tok.length();++j)
+        authTok.push_back(tok[j]);
+    tok.truncate(i);
     session.request.begin("STOP");
     session.request.enqueue_field_name("ServerID");
-    session.request << tok << flush;
+    if (authTok.length() > 0)
+        session.request.enqueue_field_name("AuthPID");
+    session.request << tok;
+    if (authTok.length() > 0)
+        session.request << newline << authTok;
+    session.request << flush;
     request_response_sequence(session);
 }
 

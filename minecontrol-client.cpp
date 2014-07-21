@@ -503,7 +503,7 @@ bool controller_client::command_exec(rstream& kstream,rstream& vstream)
     pauth = servers[i]->pserver->get_authority();
     if (pauth != NULL) {
         int pid;
-        res = pauth->run_executable(command,&pid);
+        res = pauth->run_auth_process(command,&pid);
         prepare_message() << res << flush;
         connection << msgbuf.get_message();
         minecontrold::standardLog << res;
@@ -523,6 +523,7 @@ bool controller_client::command_stop(rstream& kstream,rstream& vstream)
 {
     str key;
     uint32 id = -1;
+    int32 authPID = -1;
     dynamic_array<server_handle*> servers;
     minecraft_server_manager::auth_lookup_result result;
     // read off needed property
@@ -531,6 +532,14 @@ bool controller_client::command_stop(rstream& kstream,rstream& vstream)
             vstream >> id;
             if (!vstream.get_input_success() || id==0) {
                 prepare_error() << "Bad id value specified; expected a positive non-zero integer" << flush;
+                connection << msgbuf.get_message();
+                return false;
+            }
+        }
+        else if (key == "authpid") {
+            vstream >> authPID;
+            if (!vstream.get_input_success() || authPID<=0) {
+                prepare_error() << "Bad authority PID value specified; expected a positive non-zero integer" << flush;
                 connection << msgbuf.get_message();
                 return false;
             }
@@ -563,12 +572,24 @@ bool controller_client::command_stop(rstream& kstream,rstream& vstream)
         connection << msgbuf.get_message();
         return false;
     }
-    auto status = servers[i]->pserver->end();
-    prepare_message() << status << flush;
-    connection << msgbuf.get_message();
-    // use the original id in log message to map closing server
-    // to the client session that started it
-    minecontrold::standardLog << '{' << servers[i]->get_clientid() << "} " << status << endline;
+    if (authPID == -1) {
+        auto status = servers[i]->pserver->end();
+        prepare_message() << status << flush;
+        connection << msgbuf.get_message();
+        // use the original id in log message to map closing server
+        // to the client session that started it
+        minecontrold::standardLog << '{' << servers[i]->get_clientid() << "} " << status << endline;
+    }
+    else {
+        minecontrol_authority* auth = servers[i]->pserver->get_authority();
+        if (auth==NULL || !auth->stop_auth_process(authPID))
+            prepare_error() << "No authority process existed with PID=" << authPID << flush;
+        else {
+            prepare_message() << "Authority process with PID=" << authPID << " was terminated" << flush;
+            client_log(minecontrold::standardLog) << "client terminated authority program with PID=" << authPID << endline;
+        }
+        connection << msgbuf.get_message();
+    }
     // return regulation of minecraft server(s) to the manager
     minecraft_server_manager::attach_server(&servers[0],servers.size());
     return true;

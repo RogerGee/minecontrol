@@ -791,6 +791,7 @@ server_handle::server_handle()
                 minutesElapsed, minutesTotal,
                 secondsElapsed, secondsTotal;
             passwd* userInfo = ::getpwuid(_handles[i]->pserver->_uid);
+            dynamic_array<int32> authProcessPIDs;
             // calculate time running and time total
             var = _handles[i]->pserver->_maxTime;
             hoursTotal = var / 3600;
@@ -802,9 +803,18 @@ server_handle::server_handle()
             var %= 3600;
             minutesElapsed = var / 60;
             secondsElapsed = var % 60;
+            if (_handles[i]->pserver->_authority != NULL)
+                _handles[i]->pserver->_authority->get_auth_processes(authProcessPIDs);
             stream << _handles[i]->pserver->_internalName << ": id=" << _handles[i]->pserver->_internalID
-                   << " pid=" << _handles[i]->pserver->_processID 
-                   << " user=" << (userInfo==NULL ? "unknown" : userInfo->pw_name)
+                   << " pid=" << _handles[i]->pserver->_processID;
+            if (authProcessPIDs.size() > 0) {
+                stream << '[';
+                stream << authProcessPIDs[0];
+                for (size_type ind = 1;ind < authProcessPIDs.size();++ind)
+                    stream << ',' << authProcessPIDs[ind];
+                stream << ']';
+            }
+            stream << " user=" << (userInfo==NULL ? "unknown" : userInfo->pw_name)
                    << " time=";
             stream.fill('0');
             stream << setw(2) << hoursElapsed << ':' << minutesElapsed << ':' << secondsElapsed

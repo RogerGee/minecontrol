@@ -51,7 +51,9 @@ OBJECTS_SERVER := $(addprefix $(OBJECT_DIRECTORY),$(OBJECTS_SERVER))
 OBJECTS_CLIENT := $(addprefix $(OBJECT_DIRECTORY),$(OBJECTS_CLIENT))
 
 all: $(OBJECT_DIRECTORY) $(PROGRAM_SERVER) $(PROGRAM_CLIENT)
+	make -C auth
 debug: $(OBJECT_DIRECTORY) $(PROGRAM_SERVER) $(PROGRAM_CLIENT)
+	make -C auth debug
 
 $(PROGRAM_SERVER): $(OBJECTS_SERVER)
 	$(LINK) $(OUT)$(PROGRAM_SERVER) $(OBJECTS_SERVER) $(LIBRARY_SERVER)
@@ -106,11 +108,14 @@ clean:
 	if [ -f $(PROGRAM_NAME_SERVER_DEBUG) ]; then rm --verbose $(PROGRAM_NAME_SERVER_DEBUG); fi;
 	if [ -f $(PROGRAM_NAME_CLIENT) ]; then rm --verbose $(PROGRAM_NAME_CLIENT); fi;
 	if [ -f $(PROGRAM_NAME_CLIENT_DEBUG) ]; then rm --verbose $(PROGRAM_NAME_CLIENT_DEBUG); fi;
+	make -C auth clean
 
 install:
 	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) /usr/local/bin; chmod go-rwx /usr/bin/$(PROGRAM_NAME_SERVER); fi;
 	if [ -f $(PROGRAM_NAME_CLIENT) ]; then cp $(PROGRAM_NAME_CLIENT) /usr/local/bin; fi;
+	make -C auth install
 
 uninstall:
 	if [ -f /usr/local/bin/$(PROGRAM_NAME_SERVER) ]; then rm --verbose /usr/local/bin/$(PROGRAM_NAME_SERVER); fi;
 	if [ -f /usr/local/bin/$(PROGRAM_NAME_CLIENT) ]; then rm --verbose /usr/local/bin/$(PROGRAM_NAME_CLIENT); fi;
+	make -C auth uninstall

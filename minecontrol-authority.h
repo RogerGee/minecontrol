@@ -138,7 +138,10 @@ namespace minecraft_controller
 
         console_result client_console_operation(socket& clientChannel); // blocks
         void issue_command(const rtypes::str& commandLine);
-        execute_result run_executable(rtypes::str commandLine,int* ppid = NULL);
+
+        execute_result run_auth_process(rtypes::str commandLine,int* ppid = NULL);
+        bool stop_auth_process(rtypes::int32 pid);
+        void get_auth_processes(rtypes::dynamic_array<rtypes::int32>& pidlist) const;
 
         bool is_responsive() const; // determine if server process is still responsive
 
@@ -156,7 +159,7 @@ namespace minecraft_controller
         pipe _childStdIn[ALLOWED_CHILDREN]; // write-only pipe (in parent) to child stdin
         rtypes::int32 _childID[ALLOWED_CHILDREN]; // parallel array of child process ids
         int _childCnt; // maintain a count of child processes (for convenience)
-        mutex _childMtx, _clientMtx; // control cross-thread access
+        mutable mutex _childMtx, _clientMtx; // control cross-thread access
         mutable rtypes::ulong _threadID; // processing threadID
         volatile bool _threadCondition;
         volatile bool _consoleEnabled;

@@ -127,8 +127,9 @@ sent. The client simply needs to shutdown the socket connection to cleanly disco
         EXEC
          ServerID: [integer number]
          Command: [string: command line to execute]
-        STOP
-         ServerID: [integer number]
+        STOP                            (stop a process run by minecontrol; if AuthPID is not specified then the minecraft server denoted
+         ServerID: [integer number]           by 'ServerID' is stopped along with all authority process that might be running alongside it; if
+         [AuthPID: [integer number]]          'AuthPID' is specified, then only the authority program with that PID is stopped)
         CONSOLE             (begin console communications; client should begin a new thread that reads messages and writes to output screen;
                                    the server responds to this command with a CONSOLE-MESSAGE reponse with Status=established; no other console
                                    commands are directly acknowledged once in console mode)

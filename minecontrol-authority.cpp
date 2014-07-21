@@ -225,7 +225,7 @@ minecontrol_authority::minecontrol_authority(const pipe& ioChannel,int fderr,con
     _childCnt = 0;
     for (int i = 0;i < ALLOWED_CHILDREN;++i)
         _childID[i] = -1;
-    _threadID = -1;
+   _threadID = -1;
     _consoleEnabled = true;
     _threadCondition = true;
     // start default programs from _serverDirectory/AUTHORITY_EXEC_FILE
@@ -244,7 +244,7 @@ minecontrol_authority::minecontrol_authority(const pipe& ioChannel,int fderr,con
                 continue;
             // assume 'line' is a command line
             int pid;
-            auto result = run_executable(line,&pid);
+            auto result = run_auth_process(line,&pid);
             // log result message
             minecontrold::standardLog << result;
             if (pid != -1)
@@ -338,7 +338,7 @@ void minecontrol_authority::issue_command(const str& commandLine)
     buffer[len+1] = 0;
     _iochannel.write(buffer);
 }
-minecontrol_authority::execute_result minecontrol_authority::run_executable(str commandLine,int* ppid)
+minecontrol_authority::execute_result minecontrol_authority::run_auth_process(str commandLine,int* ppid)
 {
     static const int ARGV_BUF_SIZE = 512;
     pid_t pid;
@@ -449,6 +449,49 @@ minecontrol_authority::execute_result minecontrol_authority::run_executable(str 
         *ppid = pid;
     return result==pid ? authority_exec_okay_exited : authority_exec_okay;
 }
+bool minecontrol_authority::stop_auth_process(int32 pid)
+{
+    // this routine seeks to stop a service-oriented authority 
+    // process by convention (sending EOF to the child process)
+    // first; we give a timeout period for the child to quit before
+    // sending the sure kill signal
+    _childMtx.lock();
+    for (int32 i = 0;i < ALLOWED_CHILDREN;++i) {
+        if (_childID[i] == pid) {
+            // cache the PID, close the pipe, and mark the child as non-existing;
+            // then return control to other threads that may need to send messages
+            _childStdIn[i].close();
+            _childID[i] = -1;
+            _childMtx.unlock();
+            // let's give 10 seconds for the child to terminate
+            int result;
+            for (int sec = 1;sec <= 10;++sec) {
+                int status;
+                result = waitpid(pid,&status,WNOHANG);
+                if (result == pid)
+                    break;
+                sleep(1);
+            }
+            // if the child didn't terminate, send the sure kill signal
+            if (result != pid) {
+                kill(pid,SIGKILL);
+                waitpid(pid,NULL,0);
+            }
+            return true;
+        }
+    }
+    _childMtx.unlock();
+    return false;
+}
+void minecontrol_authority::get_auth_processes(dynamic_array<int32>& pidlist) const
+{
+    _childMtx.lock();
+    for (int32 i = 0;i < ALLOWED_CHILDREN;++i) {
+        if (_childID[i] != -1)
+            pidlist.push_back(_childID[i]);
+    }
+    _childMtx.unlock();
+}
 bool minecontrol_authority::is_responsive() const
 {
     // the processing thread is joinable, therefore try
@@ -530,7 +573,7 @@ void* minecontrol_authority::processing(void* pparam)
         object->_clientMtx.unlock();
         // if there are any child programs running, send a parsed version of the
         // message to them on their stdin; also check the status of the running
-        // program
+        // process for termination
         object->_childMtx.lock();
         if (object->_childCnt > 0) {
             int status;
@@ -548,18 +591,21 @@ void* minecontrol_authority::processing(void* pparam)
                 ss << newline;
                 for (int i = 0;i < ALLOWED_CHILDREN;++i) {
                     if (object->_childID[i] != -1) {
-                        // send parsed message to child process (this pipe write may fail if the child isn't reading our messages)
-                        object->_childStdIn[i].write(ss.get_device());
+                        if ( object->_childStdIn[i].is_valid_output() )
+                            // send parsed message to child process (this pipe write may fail if the child isn't reading our messages)
+                            object->_childStdIn[i].write(ss.get_device());
                         // wait poll any child process so that they can be reaped as soon as possible; I don't
                         // like the idea of a zombie apocalypse happening (at least at the moment)
                         if (waitpid(object->_childID[i],&status,WNOHANG) == object->_childID[i]) {
                             object->_childStdIn[i].close();
                             object->_childID[i] = -1;
+                            --object->_childCnt;
                         }
                     }
                 }
             }
-            delete pmessage;
+            if (pmessage != NULL)
+                delete pmessage;
         }
         object->_childMtx.unlock();
         // transfer any extra bytes to the beginning of the buffer (for simplicity and to allow the full capacity)
@@ -573,14 +619,14 @@ void* minecontrol_authority::processing(void* pparam)
     // from being started by remote clients
     object->_consoleEnabled = false;
     object->_childMtx.lock();
-    // wait for children to shutdown; give 5 seconds for termination else send kill signal
+    // wait for children to shutdown; give 10 seconds for termination else send kill signal
     for (int i = 0;i < ALLOWED_CHILDREN;++i) {
         if (object->_childID[i] != -1) {
             pid_t result;
             // close pipe to signal end of input
             object->_childStdIn[i].close();
             // give the process time to quit
-            for (int sec = 1;sec <= 5;++sec) {
+            for (int sec = 1;sec <= 10;++sec) {
                 int status;
                 result = waitpid(object->_childID[i],&status,WNOHANG);
                 if (result == object->_childID[i])
@@ -588,8 +634,10 @@ void* minecontrol_authority::processing(void* pparam)
                 sleep(1);
             }
             // if the child didn't close in a reasonable amount of time, send sure kill
-            if (result != object->_childID[i])
+            if (result != object->_childID[i]) {
                 kill(object->_childID[i],SIGKILL);
+                waitpid(object->_childID[i],NULL,0);
+            }
             object->_childID[i] = -1;
         }
     }
@@ -601,12 +649,15 @@ void* minecontrol_authority::processing(void* pparam)
     int top = 0;
     *outProgram = commandLine;
     while (*commandLine && top<size) {
+        while (*commandLine && isspace(*commandLine))
+            ++commandLine;
         outArgv[top++] = commandLine;
         while (*commandLine && !isspace(*commandLine))
             ++commandLine;
-        if (*commandLine)
+        if (*commandLine) {
             *commandLine = 0;
-        ++commandLine;
+            ++commandLine;
+        }
     }
     if (top < size) {
         outArgv[top] = NULL;

@@ -67,3 +67,16 @@ clean:
 	if [ -f $(AUTH_LIB_REALNAME) ]; then rm --verbose $(AUTH_LIB_REALNAME); fi
 	if [ -f journal ]; then rm --verbose journal; fi
 	if [ -f journal-debug ]; then rm --verbose journal-debug; fi
+
+# installation rules
+install:
+	mkdir -p /usr/local/lib/minecontrol
+	cp journal /usr/local/lib/minecontrol
+	cp $(AUTH_LIB_REALNAME) /usr/local/lib/minecontrol
+	ln -s /usr/local/lib/minecontrol/$(AUTH_LIB_REALNAME) /usr/local/lib/$(AUTH_LIB_REALNAME)
+	ldconfig
+
+uninstall:
+	rm --verbose -rf /usr/local/lib/minecontrol
+	rm --verbose /usr/local/lib/$(AUTH_LIB_REALNAME)
+	ldconfig
