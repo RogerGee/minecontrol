@@ -17,6 +17,7 @@ INITD_DIR=$ROOT_DIR/etc/init.d
 MAN1_DIR=$ROOT_DIR/usr/share/man/man1
 MAN5_DIR=$ROOT_DIR/usr/share/man/man5
 LIB_DIR=$ROOT_DIR/usr/lib/minecontrol
+LIB_DIR_ABS=/usr/lib/minecontrol
 STD_LIB_DIR=$ROOT_DIR/usr/lib
 
 # source files
@@ -32,6 +33,7 @@ AUTH_PROGRAMS=auth/journal #auth/construct auth/spawner
 CONTROL_FILE=$INFO_DIR/control
 POSTINST_FILE=$INFO_DIR/postinst
 PRERM_FILE=$INFO_DIR/prerm
+POSTRM_FILE=$INFO_DIR/postrm
 
 # create directories if they do not exist
 if [ ! -d $ROOT_DIR ]
@@ -73,6 +75,7 @@ echo "Depends: libc6, libstdc++6, libssl1.0.0" >> $CONTROL_FILE
 
 # copy all files to destinations
 cp prerm $PRERM_FILE
+cp postrm $POSTRM_FILE
 cp postinst $POSTINST_FILE
 cp minecontrold $BINARY_DIR
 cp minecontrold.init.d $INITD_DIR/minecontrold
@@ -81,10 +84,8 @@ cp $MAN5_PAGES $MAN5_DIR
 cp $AUTH_LIBRARY $LIB_DIR
 cp $AUTH_PROGRAMS $LIB_DIR
 
-# set up shared library sym-links; the so-name link is created by ldconfig
-ln -s $LIB_DIR/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_REALNAME
-#ln -s $LIB_DIR/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_SONAME
-#ln -s $LIB_DIR/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_LINKNAME
+# set up shared library symlink; the so-name link is created by ldconfig
+ln -s $LIB_DIR_ABS/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_REALNAME
 
 # compress man pages
 gzip -9 $MAN1_DIR/*.1
