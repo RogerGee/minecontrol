@@ -1,0 +1,129 @@
+.TH minecontrol.exec 5
+.SH NAME
+minecontrol.exec \- minecontrol authority program auto-execution script
+.SH DESCRIPTION
+The \fIminecontrol.exec\fR file controls minecontrol authority program execution at server
+start time. When a minecontrol server starts a Minecraft server, it begins several modes 
+of communication with the Minecraft server. One such function of the minecontrol server
+is to provide an authoritative communication mode that handles Minecraft server commands and messages.
+This mode is referred to as the "minecontrol authority". A minecontrol server can extend its
+functionality by executing so-called "authority programs". These programs follow a simple protocol
+to receive messages from the minecontrol server and send messages directly to the Minecraft server.
+See later sections for more details on the operation of authority programs.
+
+The \fIminecontrol.exec\fR file contains a list of command-lines for authority programs that you wish
+to be executed when the Minecraft server is run. It serves as a way to always ensure default execution
+of certain authority programs that otherwise would have to be run by issuing an EXEC command to the
+minecontrol server (see \fBminecontrol\fR(1)). The file should be placed in the directory that contains
+Minecraft server files. This usually is relative to your $HOME/minecraft directory.
+
+Minecontrol searches the following locations for authority programs:
+.RS
+\- /usr/lib/minecontrol
+.RE
+.RS
+\- /usr/local/lib/minecontrol
+.RE
+.RS
+\- $HOME/minecraft
+.RE
+.RS
+\- $HOME/minecraft/$SERVER
+.RE
+.SH AUTHORITY PROGRAMS
+An authority program issues server console commands to a Minecraft server process. It also receives messages
+from a minecontrol server. The minecontrol server takes messages from a Minecraft server and recreates them
+using a simpler format. The protocol used between authority program and minecontrol server is line-oriented, 
+with each line making up a single message. The first token on a line indicates the message kind, which determines
+the format of tokens that follow it. Tokens are separated by whitespace. Some tokens however proceed until the
+end of line. Here is a list of supported messages kinds and their formats followed by a brief description of each.
+A token with an ellipses denotes that the token proceeds until the end-of-line:
+.RS
+.TP
+\fBstart\fR \fIserver-version\fR
+Issued upon Minecraft server start-up
+.RE
+.RS
+.TP
+\fBbind\fR \fIaddress\fR
+Issued when the Minecraft server binds to the specified address
+.RE
+.RS
+.TP
+\fBserver-chat\fR \fBServer\fR \fImessage...\fR
+Issued when the server operator chats using the "say" command
+.RE
+.RS
+.TP
+\fBserver-secret-chat\fR \fBServer\fR \fImessage...\fR
+Issued when the server operator chats using the "tell" command
+.RE
+.RS
+.TP
+\fBshutdown\fR
+Issued when the server is shutting down (issued only once)
+.RE
+.RS
+.TP
+\fBplayer-id\fR \fIplayer-name\fR \fIplayer-UUID\fR
+Issued when a player logs in and their UUID is logged
+.RE
+.RS
+.TP
+\fBlogin\fR \fIplayer-name\fR \fIplayer-IP-address\fR \fIentity-id\fR \fIX-coord\fR \fIY-coord\fR \fIZ-coord\fR
+Issued when a player logs in
+.RE
+.RS
+.TP
+\fBjoin\fR \fIplayer-name\fR
+Issued when a player logs in
+.RE
+.RS
+.TP
+\fBlogout-connection\fR \fIplayer-name\fR undocumented-tokens...
+Issued when a player loses connection; some of the tokens are undocumented
+.RE
+.RS
+.TP
+\fBlost-connection\fR \fIplayer-name\fR undocumented-tokens...
+Issued when a player loses connection
+.RE
+.RS
+.TP
+\fBleave\fR \fIplayer-name\fR
+Issued when a player leaves the game
+.RE
+.RS
+.TP
+\fBchat\fR \fIplayer-name\fR \fImessage...\fR
+Issued when a player sends a public chat message
+.RE
+.RS
+.TP
+\fBachievement\fR \fIplayer-name\fR \fIachievement-name\fR
+Issued when a player earns an achievement
+.RE
+.RS
+.TP
+\fBplayer-teleported\fR \fIplayer-name\fR \fIX-coord\fR \fIY-coord\fR \fIZ-coord\fR
+Issued when a player is teleported to a coordinate location
+.RE
+.RS
+.TP
+\fBunknown\fR \fIliteral-message...\fR
+Issued when a message doesn't fit any of the previous criteria; \fIliteral-message...\fR refers to the portion of the
+message after the timestamp and log information
+.RE
+
+As of this release, minecontrol ships with the following standard authority programs:
+.RS
+.TP
+journal -
+Maintains a database of world locations journaled by in-game players. Supports echoing the locations to players as well as teleporting them
+to locations. Each player maintains their own namespace of locations; there is also an option to use a public namespace so that location can
+be shared.
+.RE
+.SH AUTHOR
+Written by Roger P. Gee <rpg11a@acu.edu>
+.SH SEE ALSO
+\fBminecontrol\fR(1), \fBminecontrold\fR(1), \fBminecontrol.init\fR(5)

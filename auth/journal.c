@@ -87,6 +87,7 @@ int main(int argc,const char* argv[])
     tree_init(&telerecord);
     read_journal_file();
     /* register callbacks for input events */
+    hook_tracking_function(&track_help,m_chat,"%s journal help");
     if (journal_allow_tell)
         hook_tracking_function(&track_tell,m_chat,"%s journal tell %s");
     hook_tracking_function(&track_add,m_chat,"%s journal add %s");
@@ -562,7 +563,13 @@ int track_main(int kind,const char* message)
 }
 int track_help(int kind,const char* message,const callback_parameter* params)
 {
-    issue_command_str("tellraw %s {text:\"Commands: tell|add|up|rm|tp\",color:\"gray\"}");
+    issue_command_str("tellraw %s {text:\"journal \",color:\"white\",\
+extra:[{text:\"add\",color:\"gray\"},{text:\" | \",color:\"white\"},\
+{text:\"tell\",color:\"gray\"},{text:\" | \",color:\"white\"},\
+{text:\"up\",color:\"gray\"},{text:\" | \",color:\"white\"},\
+{text:\"rm\",color:\"gray\"},{text:\" | \",color:\"white\"},\
+{text:\"tp \",color:\"gray\"},{text:\"location-label\",color:\"blue\",underlined:\"true\"}\
+]}",params->s_tokens[0]);
     return 0;
 }
 int track_tell(int kind,const char* message,const callback_parameter* params)

@@ -20,7 +20,7 @@ static const char* DOMAIN_NAME = "@minecontrol";
 static const char* SERVICE_PORT = "44446";
 static const char* PROGRAM_NAME;
 static const char* const CLIENT_NAME = "minecontrol-standard";
-static const char* const PROGRAM_VERSION = "0.8 (BETA)";
+static const char* const PROGRAM_VERSION = "1.0";
 static const char PROMPT_MAIN = '#';
 static const char PROMPT_CONSOLE = '$';
 

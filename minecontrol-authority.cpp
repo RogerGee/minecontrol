@@ -458,8 +458,8 @@ bool minecontrol_authority::stop_auth_process(int32 pid)
     _childMtx.lock();
     for (int32 i = 0;i < ALLOWED_CHILDREN;++i) {
         if (_childID[i] == pid) {
-            // cache the PID, close the pipe, and mark the child as non-existing;
-            // then return control to other threads that may need to send messages
+            // close the pipe, and mark the child as non-existing; then return
+            // control to other threads that may need to send messages
             _childStdIn[i].close();
             _childID[i] = -1;
             _childMtx.unlock();
