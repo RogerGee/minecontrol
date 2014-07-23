@@ -4,5 +4,4 @@
 if [ $1 = configure ]
 then
 update-rc.d -f minecontrold defaults
-ldconfig
 fi

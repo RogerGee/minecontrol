@@ -1,7 +1,0 @@
-#/bin/sh
-# postrm - post-removal script for minecontrold package
-
-if [ $1 = remove ]
-then
-ldconfig
-fi

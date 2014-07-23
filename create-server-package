@@ -14,26 +14,20 @@ ROOT_DIR=$1
 INFO_DIR=$ROOT_DIR/DEBIAN
 BINARY_DIR=$ROOT_DIR/usr/bin
 INITD_DIR=$ROOT_DIR/etc/init.d
+SETTINGS_DIR=$ROOT_DIR/etc/minecontrold
 MAN1_DIR=$ROOT_DIR/usr/share/man/man1
 MAN5_DIR=$ROOT_DIR/usr/share/man/man5
-LIB_DIR=$ROOT_DIR/usr/lib/minecontrol
-LIB_DIR_ABS=/usr/lib/minecontrol
-STD_LIB_DIR=$ROOT_DIR/usr/lib
+AUTH_DIR=$ROOT_DIR/usr/lib/minecontrol
 
 # source files
 MAN1_PAGES=minecontrold.1
 MAN5_PAGES="minecontrol.exec.5 minecontrol.init.5"
-AUTH_LIBRARY_REALNAME=libminecontrol-api.so.1.0.0
-AUTH_LIBRARY_SONAME=libminecontrol-api.so.1
-AUTH_LIBRARY_LINKNAME=libminecontrol-api.so
-AUTH_LIBRARY=auth/$AUTH_LIBRARY_REALNAME
 AUTH_PROGRAMS=auth/journal #auth/construct auth/spawner
 
 # destination files
 CONTROL_FILE=$INFO_DIR/control
 POSTINST_FILE=$INFO_DIR/postinst
 PRERM_FILE=$INFO_DIR/prerm
-POSTRM_FILE=$INFO_DIR/postrm
 
 # create directories if they do not exist
 if [ ! -d $ROOT_DIR ]
@@ -52,6 +46,10 @@ if [ ! -d $INITD_DIR ]
 then
 mkdir -p $INITD_DIR
 fi
+if [ ! -d $SETTINGS_DIR ]
+then
+mkdir -p $SETTINGS_DIR
+fi
 if [ ! -d $MAN1_DIR ]
 then
 mkdir -p $MAN1_DIR
@@ -60,9 +58,9 @@ if [ ! -d $MAN5_DIR ]
 then
 mkdir -p $MAN5_DIR
 fi
-if [ ! -d $LIB_DIR ]
+if [ ! -d $AUTH_DIR ]
 then
-mkdir -p $LIB_DIR
+mkdir -p $AUTH_DIR
 fi
 
 # make the control file
@@ -71,21 +69,17 @@ echo Version: $2 >> $CONTROL_FILE
 echo "Maintainer: Roger Gee <rpg11a@acu.edu>" >> $CONTROL_FILE
 echo "Description: A daemon for authorizing and managing Minecraft servers" >> $CONTROL_FILE
 echo Architecture: $3 >> $CONTROL_FILE
-echo "Depends: libc6, libstdc++6, libssl1.0.0" >> $CONTROL_FILE
+echo "Depends: libc6, libstdc++6, libssl1.0.0, libminecontrol-api1.0" >> $CONTROL_FILE
 
 # copy all files to destinations
-cp prerm $PRERM_FILE
-cp postrm $POSTRM_FILE
-cp postinst $POSTINST_FILE
+cp prerm-server $PRERM_FILE
+cp postinst-server $POSTINST_FILE
 cp minecontrold $BINARY_DIR
 cp minecontrold.init.d $INITD_DIR/minecontrold
+cp minecontrol.init $SETTINGS_DIR
 cp $MAN1_PAGES $MAN1_DIR
 cp $MAN5_PAGES $MAN5_DIR
-cp $AUTH_LIBRARY $LIB_DIR
-cp $AUTH_PROGRAMS $LIB_DIR
-
-# set up shared library symlink; the so-name link is created by ldconfig
-ln -s $LIB_DIR_ABS/$AUTH_LIBRARY_REALNAME $STD_LIB_DIR/$AUTH_LIBRARY_REALNAME
+cp $AUTH_PROGRAMS $AUTH_DIR
 
 # compress man pages
 gzip -9 $MAN1_DIR/*.1

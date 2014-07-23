@@ -33,8 +33,8 @@ static network_socket remote;
 class minecraft_controller_error { };
 
 // functions
-static void process_short_option(const char* option);
-static void process_long_option(const char* option);
+static bool process_short_option(const char* option);
+static bool process_long_option(const char* option);
 static void daemonize(); // turns this process into a daemon
 static void shutdown_handler(int); // recieves signals from system for server shutdown
 static void create_server_sockets(); // creates server sockets
@@ -47,10 +47,12 @@ int main(int argc,const char* argv[])
     if (argc > 1) {
         for (int i = 1;i < argc;++i) {
             if (argv[i][0] == '-') {
-                if (argv[i][1] == '-')
-                    process_long_option(argv[i]+2);
-                else
-                    process_short_option(argv[i]+1);
+                if (argv[i][1] == '-') {
+                    if ( process_long_option(argv[i]+2) )
+                        return 0;
+                }
+                else if ( process_short_option(argv[i]+1) )
+                    return 0;
             }
         }
     }
@@ -79,17 +81,24 @@ int main(int argc,const char* argv[])
     return 0;
 }
 
-void process_short_option(const char*)
+bool process_short_option(const char*)
 {
+    return false;
 }
 
-void process_long_option(const char* option)
+bool process_long_option(const char* option)
 {
-    if ( rutil_strcmp(option,"version") )
+    if ( rutil_strcmp(option,"version") ) {
         stdConsole << minecontrold::get_server_name() << ' ' << minecontrold::get_server_version() << newline << newline 
                    << "Report bugs (kindly!) to Roger Gee <rpg11a@acu.edu>.\n";
-    else if ( rutil_strcmp(option,"help") )
-        stdConsole << "";
+        return true;
+    }
+    else if ( rutil_strcmp(option,"help") ) {
+        stdConsole << minecontrold::get_server_name() << ' ' << minecontrold::get_server_version() << newline << newline
+                   << "Options:\n\t--version\n\t--help\n\nSee man minecontrold(1) for a whole lot more.\nReport bugs (kindly!) to Roger Gee <rpg11a@acu.edu>.\n";
+        return true;
+    }
+    return false;
 }
 
 void daemonize()

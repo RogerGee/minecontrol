@@ -58,12 +58,13 @@ server as an authority program once the Minecraft server is running.
 The \fBstart\fR command requires that the client be authenticated using the \fBlogin\fR command.
 .RE
 .TP
-\fBstop\fR [\fIserver\-id\fR]
+\fBstop\fR [\fIserver\-id[:authority-process-ID]\fR]
 The client will ask that the minecontrol server issue the 'stop' command to the specified Minecraft server. If the
 Minecraft server doesn't respond to the 'stop' command, the minecontrol server will most likely kill it after a default
 timeout period. The \fIserver\-id\fR is obtained from the output of a \fBstatus\fR command. If the \fIserver\-id\fR is not
 specified on the command\-line, the client will prompt the user. The \fBstop\fR command requires that the client be authenticated
-using the \fBlogin\fR command.
+using the \fBlogin\fR command. If authority-process-ID is specified then the Minecraft server process is not stopped but rather the
+authority process identified by the PID. This value can also be obtained from the output of a \fBstatus\fR command.
 .TP
 \fBstatus\fR
 The client will ask the minecontrol server for a print\-out of the status of running Minecraft server processes. This command may run for
