@@ -120,8 +120,9 @@ namespace minecraft_controller
         };
         enum execute_result
         {
-            authority_exec_okay, // the executable program was successfully executed
-            authority_exec_okay_exited, // the executable program was successfully executed
+            authority_exec_okay_exited = -1, // the executable program was successfully executed (it exited quickly)
+            authority_exec_okay = 0, // the executable program was successfully executed
+            authority_exec_process_fail, // the authority process returned with an error code
             authority_exec_cannot_run, // the process couldn't fork, exec failed in some way other than not finding the program, or another system call failed
             authority_exec_access_denied, // the user didn't have execute permission for the executable program
             authority_exec_attr_fail, // the correct environment for the child process couldn't be applied

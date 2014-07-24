@@ -417,8 +417,14 @@ int get_message(char* buffer,int size)
     /* read a line of input */
     if (fgets(buffer,size,stdin) == NULL) {
         buffer[0] = 0;
-        if (errno == EINTR)
-            return m_intr;
+        if ( ferror(stdin) ) {
+            clearerr(stdin); /* need to reset error status */
+            if (errno == EINTR)
+                return m_intr;
+            return m_err;
+        }
+        /* assume feof(stdin) is non-zero */
+        clearerr(stdin); /* need to reset error status */
         return m_eoi;
     }
     /* get first token */
@@ -448,8 +454,14 @@ int get_message_ex(message* msg)
     char* p;
     char buffer[MAX_BUFFER];
     if (fgets(buffer,MAX_BUFFER,stdin) == NULL) {
-        if (errno == EINTR)
-            return m_intr;
+        if ( ferror(stdin) ) {
+            clearerr(stdin); /* need to reset error status */
+            if (errno == EINTR)
+                return m_intr;
+            return m_err;
+        }
+        /* assume feof(stdin) is non-zero */
+        clearerr(stdin); /* need to reset error status */
         return m_eoi;
     }
     /* remove endline from buffer */

@@ -42,6 +42,7 @@ typedef enum {
     m_invalid = -1,
     m_eoi = -2,
     m_intr = -3, /* no message was received; a signal interrupted the input operation */
+    m_err = -4, /* another error occured and the input operation failed */
     _m_first = 0,
     m_chat = _m_first,
     m_serverchat,

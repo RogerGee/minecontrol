@@ -431,6 +431,8 @@ minecontrol_authority::execute_result minecontrol_authority::run_auth_process(st
     sleep(1);
     int status;
     pid_t result = waitpid(pid,&status,WNOHANG);
+    if (ppid != NULL)
+        *ppid = pid;
     if (result == pid) {
         execute_result code = (execute_result)WEXITSTATUS(status);
         _childMtx.unlock();
@@ -445,8 +447,6 @@ minecontrol_authority::execute_result minecontrol_authority::run_auth_process(st
         _childID[index] = pid;
         _childMtx.unlock();
     }
-    if (ppid != NULL)
-        *ppid = pid;
     return result==pid ? authority_exec_okay_exited : authority_exec_okay;
 }
 bool minecontrol_authority::stop_auth_process(int32 pid)
@@ -463,9 +463,9 @@ bool minecontrol_authority::stop_auth_process(int32 pid)
             _childStdIn[i].close();
             _childID[i] = -1;
             _childMtx.unlock();
-            // let's give 10 seconds for the child to terminate
+            // let's give 30 seconds for the child to terminate
             int result;
-            for (int sec = 1;sec <= 10;++sec) {
+            for (int sec = 1;sec <= 30;++sec) {
                 int status;
                 result = waitpid(pid,&status,WNOHANG);
                 if (result == pid)
@@ -476,7 +476,10 @@ bool minecontrol_authority::stop_auth_process(int32 pid)
             if (result != pid) {
                 kill(pid,SIGKILL);
                 waitpid(pid,NULL,0);
+                minecontrold::standardLog << "Authority process with PID=" << pid << " was forcefully killed by user request" << endline;
             }
+            else
+                minecontrold::standardLog << "Authority process with PID=" << pid << " was cleanly terminated by user request" << endline;
             return true;
         }
     }
@@ -509,39 +512,17 @@ bool minecontrol_authority::is_responsive() const
 }
 void* minecontrol_authority::processing(void* pparam)
 {
-    minecontrol_authority* object = reinterpret_cast<minecontrol_authority*>(pparam);
     static const size_type BUF_SIZE = 4096;
-    pthread_t tid;
+    minecontrol_authority* object = reinterpret_cast<minecontrol_authority*>(pparam);
     char msgbuf[BUF_SIZE+1]; // add 1 for the null terminator
-    char* pbuf = msgbuf;
+    size_type readloc = 0; // location within 'msgbuf' to begin read operation
     // handle message IO for authority
     while (object->_threadCondition) {
-        size_type msglen = 0;
-        size_type len = 0;
+        char* msg = msgbuf;
+        size_type buflen = readloc;
         // read off a message written by the Minecraft server process to its standard output
-        while (len < BUF_SIZE) {
-            object->_iochannel.read(pbuf,BUF_SIZE-len); // blocking call
-            if (object->_iochannel.get_last_operation_status() != success_read)
-                break;
-            size_type last = object->_iochannel.get_last_byte_count(), i = 0;
-            len += last;
-            while (i < last) {
-                ++msglen; // include endline in msglen count
-                if (pbuf[i] == '\n')
-                    break;
-                ++i;
-            }
-            if (i < last) {
-                pbuf[i] = 0;
-                break;
-            }
-            if (len >= BUF_SIZE) { // if true, len == BUF_SIZE
-                pbuf[i] = 0; // pbuf[i] is msgbuf[BUF_SIZE]
-                break;
-            }
-            pbuf += last;
-        }
-        if (len==0 && object->_iochannel.get_last_operation_status()!=success_read) {
+        object->_iochannel.read(msgbuf+readloc,BUF_SIZE-readloc); // blocking call
+        if (object->_iochannel.get_last_operation_status() != success_read) {
             /* the pipe is not responding; the server probably shutdown; if clients are 
                connected, send a console-message with status shutdown; the mutex lock 
                unsures that we don't conflict with another thread that might try to send
@@ -549,9 +530,9 @@ void* minecontrol_authority::processing(void* pparam)
             object->_clientMtx.lock();
             for (size_type i = 0;i < object->_clientchannels.size();++i) {
                 if (object->_clientchannels[i] != NULL) {
-                    minecontrol_message msg("CONSOLE-MESSAGE");
-                    msg.add_field("Status","shutdown");
-                    msg.write_protocol_message(*object->_clientchannels[i]);
+                    minecontrol_message conmsg("CONSOLE-MESSAGE");
+                    conmsg.add_field("Status","shutdown");
+                    conmsg.write_protocol_message(*object->_clientchannels[i]);
                     object->_clientchannels[i] = NULL;
                 }
             }
@@ -559,60 +540,84 @@ void* minecontrol_authority::processing(void* pparam)
             object->_threadCondition = false;
             break;
         }
-        // if clients are registered with the authority, send the message as is
-        object->_clientMtx.lock();
-        for (size_type i = 0;i < object->_clientchannels.size();++i) {
-            if (object->_clientchannels[i] != NULL) {
-                // use the minecontrol protocol to send the server message
-                minecontrol_message msg("CONSOLE-MESSAGE");
-                msg.add_field("Status","message");
-                msg.add_field("Payload",msgbuf);
-                msg.write_protocol_message(*object->_clientchannels[i]);
+        buflen += object->_iochannel.get_last_byte_count();
+        msgbuf[buflen] = 0;
+        // go through the bytes received from the Minecraft server; find complete
+        // messages and process them
+        while (true) {
+            size_type msglen = 0;
+            // read until null terminator or endline
+            while (msg[msglen] && msg[msglen]!='\n')
+                ++msglen;
+            if (msg[msglen] == 0) {
+                if (msglen < BUF_SIZE) {
+                    if (msglen > 0) {
+                        // the server sent an incomplete message; we'll continue the
+                        // outer loop to get the rest of it; transfer part of message
+                        // to the top of 'msgbuf'
+                        for (size_type i = 0;i < msglen;++i)
+                            msgbuf[i] = msg[i];
+                        readloc = msglen;
+                    }
+                    else
+                        readloc = 0;
+                    break;
+                }
+                // 'msglen' is equal to 'BUF_SIZE'; consider this a complete message
+                // since we've run out of buffer space
             }
-        }
-        object->_clientMtx.unlock();
-        // if there are any child programs running, send a parsed version of the
-        // message to them on their stdin; also check the status of the running
-        // process for termination
-        object->_childMtx.lock();
-        if (object->_childCnt > 0) {
-            int status;
-            minecraft_server_message* pmessage;
-            pmessage = minecraft_server_message::generate_message(msgbuf);
-            if (pmessage!=NULL && pmessage->good()) {
-                /* prepare a simple message to send to any child programs; this message
-                   is already parsed so that the client doesn't have to deal with too much
-                   complexity with the Minecraft server output; each token in the message is
-                   separated by whitespace */
-                stringstream ss;
-                ss << pmessage->get_gist_string();
-                for (size_type i = 0;i < pmessage->get_token_count();++i)
-                    ss << ' ' << pmessage->get_token(i);
-                ss << newline;
-                for (int i = 0;i < ALLOWED_CHILDREN;++i) {
-                    if (object->_childID[i] != -1) {
-                        if ( object->_childStdIn[i].is_valid_output() )
-                            // send parsed message to child process (this pipe write may fail if the child isn't reading our messages)
-                            object->_childStdIn[i].write(ss.get_device());
-                        // wait poll any child process so that they can be reaped as soon as possible; I don't
-                        // like the idea of a zombie apocalypse happening (at least at the moment)
-                        if (waitpid(object->_childID[i],&status,WNOHANG) == object->_childID[i]) {
-                            object->_childStdIn[i].close();
-                            object->_childID[i] = -1;
-                            --object->_childCnt;
+            msg[msglen] = 0;
+            // if clients are registered with the authority, send the message as is
+            object->_clientMtx.lock();
+            for (size_type i = 0;i < object->_clientchannels.size();++i) {
+                if (object->_clientchannels[i] != NULL) {
+                    // use the minecontrol protocol to send the server message
+                    minecontrol_message conmsg("CONSOLE-MESSAGE");
+                    conmsg.add_field("Status","message");
+                    conmsg.add_field("Payload",msg);
+                    conmsg.write_protocol_message(*object->_clientchannels[i]);
+                }
+            }
+            object->_clientMtx.unlock();
+            // if there are any child programs running, send a parsed version of the
+            // message to them on their stdin; also check the status of the running
+            // process for termination
+            object->_childMtx.lock();
+            if (object->_childCnt > 0) {
+                int status;
+                minecraft_server_message* pmessage;
+                pmessage = minecraft_server_message::generate_message(msg);
+                if (pmessage!=NULL && pmessage->good()) {
+                    /* prepare a simple message to send to any child programs; this message
+                       is already parsed so that the client doesn't have to deal with too much
+                       complexity with the Minecraft server output; each token in the message is
+                       separated by whitespace */
+                    stringstream ss;
+                    ss << pmessage->get_gist_string();
+                    for (size_type i = 0;i < pmessage->get_token_count();++i)
+                        ss << ' ' << pmessage->get_token(i);
+                    ss << newline;
+                    for (int i = 0;i < ALLOWED_CHILDREN;++i) {
+                        if (object->_childID[i] != -1) {
+                            if ( object->_childStdIn[i].is_valid_output() )
+                                // send parsed message to child process (this pipe write may fail if the child isn't reading our messages)
+                                object->_childStdIn[i].write(ss.get_device());
+                            // wait poll any child process so that they can be reaped as soon as possible; I don't
+                            // like the idea of a zombie apocalypse happening (at least at the moment)
+                            if (waitpid(object->_childID[i],&status,WNOHANG) == object->_childID[i]) {
+                                object->_childStdIn[i].close();
+                                object->_childID[i] = -1;
+                                --object->_childCnt;
+                            }
                         }
                     }
                 }
+                if (pmessage != NULL)
+                    delete pmessage;
             }
-            if (pmessage != NULL)
-                delete pmessage;
-        }
-        object->_childMtx.unlock();
-        // transfer any extra bytes to the beginning of the buffer (for simplicity and to allow the full capacity)
-        pbuf = msgbuf;
-        for (;msglen < len;++msglen) {
-            *pbuf = msgbuf[msglen];
-            ++pbuf;
+            object->_childMtx.unlock();
+            // update 'msg' to point to start of next message (if any)
+            msg += msglen + 1;
         }
     }
     // disable clients from plugging in and also disable new executable programs
@@ -626,7 +631,7 @@ void* minecontrol_authority::processing(void* pparam)
             // close pipe to signal end of input
             object->_childStdIn[i].close();
             // give the process time to quit
-            for (int sec = 1;sec <= 10;++sec) {
+            for (int sec = 1;sec <= 30;++sec) {
                 int status;
                 result = waitpid(object->_childID[i],&status,WNOHANG);
                 if (result == object->_childID[i])
@@ -637,7 +642,10 @@ void* minecontrol_authority::processing(void* pparam)
             if (result != object->_childID[i]) {
                 kill(object->_childID[i],SIGKILL);
                 waitpid(object->_childID[i],NULL,0);
+                minecontrold::standardLog << "Authority process with PID=" << object->_childID[i] << " was forcefully killed on authority shutdown" << endline;
             }
+            else
+                minecontrold::standardLog << "Authority process with PID=" << result << " was cleanly terminated on authority shutdown" << endline;
             object->_childID[i] = -1;
         }
     }
@@ -673,7 +681,9 @@ rstream& minecraft_controller::operator <<(rstream& stream,minecontrol_authority
     else if (result == minecontrol_authority::authority_exec_okay_exited)
         return stream << "Authority program started and completed successfully";
     stream << "Authority program execution failed: ";
-    if (result == minecontrol_authority::authority_exec_cannot_run)
+    if (result == minecontrol_authority::authority_exec_process_fail)
+        stream << "the authority program returned an error code; consult 'errors' file";
+    else if (result == minecontrol_authority::authority_exec_cannot_run)
         stream << "the program couldn't be executed";
     else if (result == minecontrol_authority::authority_exec_access_denied)
         stream << "access is denied for the specified user";

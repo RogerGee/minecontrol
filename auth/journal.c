@@ -7,6 +7,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <unistd.h>
 #include <sys/time.h>
 #include <signal.h>
 
@@ -31,9 +32,10 @@ static short journal_allow_private = 1; /* allow private namespaces for journale
 static short journal_allow_public = 0; /* allow a public namespace for journaled locations */
 
 /* journal location database: map user name to location tree which maps location name to location coordinates */
-static struct search_tree database; /* key -> struct search_tree : key -> coord */
+static struct search_tree database; /* key -> struct search_tree : key -> coord* */
 static struct search_tree telerecord; /* key -> coord* */
 static short database_updated = 0; /* becomes 1 if the database is modified in any way */
+static short do_database_update = 0; /* becomes 1 if the database should be checked for updates and possibly saved */
 
 /* provide a destructor for the payload of each key in 'database' */
 static void user_database_destructor(void* payload);
@@ -67,6 +69,9 @@ static int track_portmsg(int kind,const char* message,const callback_parameter* 
 int main(int argc,const char* argv[])
 {
     fprintf(stderr,"%s: authority program start\n",argv[0]);
+    /* handle command-line arguments */
+    PROGRAM_NAME = argv[0];
+    process_command_line_options(argc-1,argv+1);
     /* setup signal handler for termination events */
     if (setup_signal(SIGTERM,&termination_handler)==-1 || setup_signal(SIGINT,&termination_handler)==-1
         || setup_signal(SIGPIPE,&termination_handler)==-1) {
@@ -78,9 +83,6 @@ int main(int argc,const char* argv[])
         fprintf(stderr,"%s: could not setup alarm signal handler\n",argv[0]);
         return 1;
     }
-    /* handle command-line arguments */
-    PROGRAM_NAME = argv[0];
-    process_command_line_options(argc-1,argv+1);
     /* load database */
     init_minecontrol_api();
     tree_init(&database);
@@ -100,9 +102,12 @@ int main(int argc,const char* argv[])
     if (begin_input_tracking(&track_main) == -1)
         fprintf(stderr,"%s: fail begin_input_tracking()\n",argv[0]);
     /* write database to file and cleanup */
-    write_journal_file();
+    if (database_updated) {
+        database_updated = 0;
+        write_journal_file();
+    }
     close_minecontrol_api();
-    tree_destroy(&telerecord);
+    tree_destroy_nopayload(&telerecord);
     tree_destroy_ex(&database,&user_database_destructor);
     fprintf(stderr,"%s: authority program exit\n",argv[0]);
     return 0;
@@ -130,21 +135,15 @@ int setup_alarm(unsigned int seconds)
 }
 void termination_handler(int signal)
 {
-    fprintf(stderr,"%s: authority program exit by signal\n",PROGRAM_NAME);
-    write_journal_file();
-    close_minecontrol_api();
-    tree_destroy_nopayload(&telerecord);
-    tree_destroy_ex(&database,&user_database_destructor);
-    _exit(0);
+    /* this modifies a global variable */
+    end_input_tracking();
 }
 void alarm_handler(int signal)
 {
-    /* let's dump the database to a file every hour if it's been updated
-       since the last interval */
-    if (database_updated) {
-        write_journal_file();
-        database_updated = 0;
-    }
+    /* mark that an alarm event occured; an m_intr message
+       will be handled later that will possible write the
+       database file to disk if need be */
+    do_database_update = 1;
 }
 
 void user_database_destructor(void* payload)
@@ -436,6 +435,7 @@ void write_journal_file()
         write_usernamespace_entry(journal,database.root);
         fputc('\n',journal);
     }
+    fprintf(stderr,"%s: wrote database to disk\n",PROGRAM_NAME);
     fclose(journal);
 }
 
@@ -453,7 +453,7 @@ coord* add_default_entry(const char* user,const char* label)
     if (key == NULL) {
         /* create new user entry*/
         struct search_tree* newentry;
-        newentry = malloc(sizeof(struct search_tree*));
+        newentry = malloc(sizeof(struct search_tree));
         tree_init(newentry);
         tree_insert(newentry,label,loc);
         if (tree_insert(&database,user,newentry) == 1) {
@@ -557,8 +557,20 @@ static coord* preop_task(const char* label[],char* player,char* inputlabel)
 }
 int track_main(int kind,const char* message)
 {
-    /* handle any other messages here */
-
+    /* handle database file update events; these occur when a m_intr message kind
+       was received (meaning a signal was sent to the process that we already handled) */
+    if (kind == m_intr) {
+        /* if 'do_database_update' then the timer alarm has elapsed; we
+           should now check the database for changes */
+        if (do_database_update) {
+            do_database_update = 0;
+            /* if the database has changed then write it to disk */
+            if (database_updated) {
+                database_updated = 0;
+                write_journal_file();
+            }
+        }
+    }
     return 0;
 }
 int track_help(int kind,const char* message,const callback_parameter* params)

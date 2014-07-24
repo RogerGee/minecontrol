@@ -118,7 +118,7 @@ void tree_node_destroy_nopayload(struct tree_node* node)
     }
     for (i = 0;i < 4;++i) {
         if (node->children[i] != NULL) {
-            tree_node_destroy(node->children[i]);
+            tree_node_destroy_nopayload(node->children[i]);
             free(node->children[i]);
         }
     }
@@ -283,20 +283,20 @@ static void tree_node_do_fix(struct tree_node* node,struct tree_node* parent)
         bound = 1;
     /* see if immediate right sibling is a 3-node */
     if (ni<bound && parent->children[(i = ni+1)]->keys[1] != NULL) {
-        int isep = i-1;
-        node->keys[0] = parent->keys[isep];
-        parent->keys[isep] = parent->children[i]->keys[0];
+        /* separator in parent is at index 'ni' */
+        node->keys[0] = parent->keys[ni];
+        parent->keys[ni] = parent->children[i]->keys[0];
         node->children[1] = parent->children[i]->children[0];
         tree_node_remove_key(parent->children[i],0,0);
     }
     /* see if immediate left sibling is a 3-node */
     else if (ni>0 && parent->children[(i = ni-1)]->keys[1] != NULL) {
-        /* int isep = i; */
+        /* separator in parent is at index i */
         node->keys[0] = parent->keys[i];
         parent->keys[i] = parent->children[i]->keys[1];
         node->children[1] = node->children[0]; /* need to shift this over */
         node->children[0] = parent->children[i]->children[2];
-        tree_node_remove_key(parent->children[i],1,1);
+        tree_node_remove_key(parent->children[i],1,2);
     }
     /* any immediate siblings are 2-nodes */
     else {
@@ -500,6 +500,8 @@ static int tree_insert_recursive(struct tree_node** node,struct tree_node* paren
         else if (n->keys[1] != NULL) {
             /* 'node' is a 3-node */
             cmp = tree_key_compare(key,n->keys[1]);
+            if (cmp == 0)
+                return 1;
             if (cmp < 0) {
                 /* 'key' is less than second key (greater than first); visit middle subtree */
                 if (tree_insert_recursive(n->children+1,n,key) == 1)

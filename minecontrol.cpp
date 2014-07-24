@@ -158,8 +158,8 @@ int main(int argc,const char* argv[])
 
     // greetings were received; connection is up
     stdConsole << "Connection established: client '" 
-               << PROGRAM_NAME << '-' << PROGRAM_VERSION << " ---> " 
-               << session.serverName << '-' << session.serverVersion << newline;
+               << PROGRAM_NAME << '-' << PROGRAM_VERSION << "' ---> server '" 
+               << session.serverName << '-' << session.serverVersion << "'\n";
 
     // main message loop
     while (session.sessionControl) {
