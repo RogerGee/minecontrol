@@ -287,23 +287,25 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     }
     else
         mcraftdir = info.userInfo.homeDirectory;
-    if ( !mcraftdir.exists() ) {
-        if (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1)
-            return mcraft_start_server_filesystem_error;
-    }
+    // create needed directories; make sure to change ownership and permissions
+    if (!mcraftdir.exists() && (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1
+            || chmod(mcraftdir.get_full_name().c_str(),S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP)==-1))
+        return mcraft_start_server_filesystem_error;
     // compute the server working directory (as a subdirectory of the home directory and the minecraft
     // user directory); create the directory (and its parent directories where able) and change its owner
     // to the authenticated user
     mcraftdir += MINECRAFT_USER_DIRECTORY;
     if ( !mcraftdir.exists() ) {
-        if (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1)
+        if (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1
+            || chmod(mcraftdir.get_full_name().c_str(),S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP)==-1)
             return mcraft_start_server_filesystem_error;
     }
     mcraftdir += info.internalName;
     if ( !mcraftdir.exists() ) {
         if (!info.isNew)
             return mcraft_start_server_does_not_exist;
-        if (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1) // create sub-directories if need be
+        if (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1
+            || chmod(mcraftdir.get_full_name().c_str(),S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP)==-1)
             return mcraft_start_server_filesystem_error;
     }
     else if (info.isNew)
@@ -327,11 +329,14 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
             _exit((int)mcraft_start_server_permissions_fail);
         // change the process umask
         ::umask(S_IWGRP | S_IWOTH);
-        // change working directory to directory for minecraft server
+        // change working directory to the directory for minecraft server
         if (::chdir( mcraftdir.get_full_name().c_str() ) != 0)
             _exit((int)mcraft_start_server_filesystem_error);
         // create the server.properties file using the properties in info
         if ( !_create_server_properties_file(info) )
+            _exit((int)mcraft_start_server_filesystem_error);
+        // create the auth.txt file needed by a new server
+        if (info.isNew && !_create_eula_txt_file())
             _exit((int)mcraft_start_server_filesystem_error);
         // check any extended server info options that depend on this process's state
         _check_extended_options_child(info);
@@ -601,6 +606,16 @@ bool minecraft_server::_create_server_properties_file(minecraft_server_info& inf
     _globals.apply_properties(info);
     // write props to properties file
     info.get_props().write(fstream);
+    return true;
+}
+bool minecraft_server::_create_eula_txt_file()
+{
+    // we need to create the obnoxious eula.txt file so that the server
+    // process will operate correctly
+    file eulatxt("eula.txt",file_create_exclusively);
+    if ( !eulatxt.is_valid_context() ) // couldn't open file
+        return false;
+    eulatxt.write("eula=true\n");
     return true;
 }
 void minecraft_server::_check_extended_options(const minecraft_server_info& info)

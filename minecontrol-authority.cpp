@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <pthread.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <signal.h>
 #include <wait.h>
@@ -370,9 +371,11 @@ minecontrol_authority::execute_result minecontrol_authority::run_auth_process(st
         _childMtx.unlock();
         return authority_exec_cannot_run;
     }
-    if (pid == 0) {
+    if (pid == 0) { // child process
         const char* program;
         const char* argv[ARGV_BUF_SIZE];
+        // change process umask to deny write to group and others
+        umask(S_IWGRP | S_IWOTH);
         // prepare arguments
         if ( !_prepareArgs(&commandLine[0],&program,argv,ARGV_BUF_SIZE) )
             _exit((int)authority_exec_too_many_arguments);

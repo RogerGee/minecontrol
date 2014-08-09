@@ -199,6 +199,7 @@ namespace minecraft_controller
 
         // helpers
         bool _create_server_properties_file(minecraft_server_info&);
+        bool _create_eula_txt_file();
         void _check_extended_options(const minecraft_server_info&); // options that need to be applied in this program
         void _check_extended_options_child(const minecraft_server_info&); // options that need to be applied in child process
         void _setup_error_file(const rtypes::str& name);

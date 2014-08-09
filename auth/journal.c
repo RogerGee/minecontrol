@@ -30,6 +30,7 @@ static short journal_allow_tp = 0; /* teleport players upon request to journaled
 static short journal_allow_tell = 1; /* whisper journaled location coordinates */
 static short journal_allow_private = 1; /* allow private namespaces for journaled locations */
 static short journal_allow_public = 0; /* allow a public namespace for journaled locations */
+static short journal_allow_ls = 1; /* allow listing of locations within a namespace to a player */
 
 /* journal location database: map user name to location tree which maps location name to location coordinates */
 static struct search_tree database; /* key -> struct search_tree : key -> coord* */
@@ -48,10 +49,12 @@ static const char* const JOURNAL_FILE = "journal";
 static void write_journal_file();
 static void read_journal_file();
 
+/* this callback is used to traverse the location database */
+static void ls_callback(struct tree_key*);
+
 /* helpers */
 static coord* add_default_entry(const char* user,const char* label);
 static int update_entry(const char* user,const char* label,coord* location);
-
 static coord* lookup_entry(const char* user,const char* label);
 static int remove_entry(const char* user,const char* label);
 
@@ -63,6 +66,7 @@ static int track_add(int kind,const char* message,const callback_parameter* para
 static int track_up(int kind,const char* message,const callback_parameter* params);
 static int track_rm(int kind,const char* message,const callback_parameter* params);
 static int track_tp(int kind,const char* message,const callback_parameter* params);
+static int track_ls(int kind,const char* message,const callback_parameter* params);
 static int track_portmsg(int kind,const char* message,const callback_parameter* params);
 
 /* main: load/unload database; process messages from minecontrol server */
@@ -97,6 +101,10 @@ int main(int argc,const char* argv[])
     hook_tracking_function(&track_rm,m_chat,"%s journal rm %s");
     if (journal_allow_tp)
         hook_tracking_function(&track_tp,m_chat,"%s journal tp %s");
+    if (journal_allow_ls) {
+        hook_tracking_function(&track_ls,m_chat,"%s journal ls");
+        hook_tracking_function(&track_ls,m_chat,"%s journal ls %s");
+    }
     hook_tracking_function(&track_portmsg,m_playerteleported,"%s %n %n %n");
     /* begin handling messages */
     if (begin_input_tracking(&track_main) == -1)
@@ -180,6 +188,8 @@ void process_command_line_options(int argc,const char* argv[])
                 journal_allow_private = state;
             else if (strcmp(op,"public") == 0)
                 journal_allow_public = state;
+            else if (strcmp(op,"ls") == 0)
+                journal_allow_ls = state;
             else
                 fprintf(stderr,"%s: ignoring unrecognized option '%s'\n",PROGRAM_NAME,op);
         }
@@ -439,6 +449,14 @@ void write_journal_file()
     fclose(journal);
 }
 
+void ls_callback(struct tree_key* key)
+{
+    coord* record;
+    record = (coord*)key->payload;
+    printf(",{text:\"[\"},{text:\"%s\",color:\"blue\",clickEvent:{action:\"suggest_command\",value:\"/tp %d %d %d\"}},{text:\"] \"}",
+        key->key,record->coord_x,record->coord_y,record->coord_z);
+}
+
 coord* add_default_entry(const char* user,const char* label)
 {
     coord* loc;
@@ -502,6 +520,26 @@ int remove_entry(const char* user,const char* label)
     return 1;
 }
 
+static int check_namespace_access(const char* label,const char* player)
+{
+    const char* const* auth;
+    /* check to see if the player has access to the namespace; this means that
+       the namespace is either one of the AUTHORIZED_NAMESPACES or is the player's
+       namespace */
+    if (journal_allow_public) {
+        auth = AUTHORIZED_NAMESPACES;
+        while (*auth != NULL) {
+            if (tree_key_compare_raw(*auth,label) == 0)
+                break;
+            ++auth;
+        }
+    }
+    else
+        auth = NULL;
+    if ((auth==NULL || *auth==NULL) && (!journal_allow_private || tree_key_compare_raw(player,label)!=0))
+        return 1;
+    return 0;
+}
 static int parse_label(const char* result[],char* player,char* label)
 {
     /* the user provided a label; this label is of the form '[namespace:]label';
@@ -512,35 +550,39 @@ static int parse_label(const char* result[],char* player,char* label)
     while (label[i] && label[i]!=':')
         ++i;
     if (label[i] == ':') {
-        const char* const* auth;
         label[i] = 0;
         result[0] = label;
         result[1] = label + i+1;
-        /* check to see if the player has access to the namespace; this means that
-           the namespace is either one of the AUTHORIZED_NAMESPACES or is the player's
-           namespace */
-        if (journal_allow_public) {
-            auth = AUTHORIZED_NAMESPACES;
-            while (*auth != NULL) {
-                if (tree_key_compare_raw(*auth,label) == 0)
-                    break;
-                ++auth;
-            }
+        /* check namespace access */
+        if (label[0] == 0) {
+            issue_command_str("tellraw %s {text:\"Incorrect namespace: cannot be empty\",color:\"red\"}",player);
+            return 1;
         }
-        else
-            auth = NULL;
-        if ((auth==NULL || *auth==NULL) && (!journal_allow_private || tree_key_compare_raw(player,label)!=0)) {
+        if (check_namespace_access(label,player) == 1) {
             issue_command_str("tellraw %s {text:\"Access to namespace %s is not authorized\",color:\"red\"}",player,label);
             return 1;
         }
     }
     else {
         if (!journal_allow_private) {
-            issue_command_str("tellraw %s {text:\"Access to private namespace is not allowed\",color:\"red\"}",player);
+            issue_command_str("tellraw %s {text:\"Access to private namespaces is denied for this session\",color:\"red\"}",player);
             return 1;
         }
-        result[0] = player;
-        result[1] = label;
+        if (journal_allow_public && label[0]=='*') {
+            /* this is a shorthand for using the public namespace; it is used when no namespace is given
+               but a prefix '*' is seen on the location label */
+            result[0] = AUTHORIZED_NAMESPACES[0];
+            result[1] = label+1;
+        }
+        else {
+            result[0] = player;
+            result[1] = label;
+        }
+    }
+    /* check for empty label parts */
+    if (result[1][0] == 0) {
+        issue_command_str("tellraw %s {text:\"Incorrect label: cannot be empty\",color:\"red\"}",player);
+        return 1;
     }
     return 0;
 }
@@ -580,7 +622,8 @@ extra:[{text:\"add\",color:\"gray\"},{text:\" | \",color:\"white\"},\
 {text:\"tell\",color:\"gray\"},{text:\" | \",color:\"white\"},\
 {text:\"up\",color:\"gray\"},{text:\" | \",color:\"white\"},\
 {text:\"rm\",color:\"gray\"},{text:\" | \",color:\"white\"},\
-{text:\"tp \",color:\"gray\"},{text:\"location-label\",color:\"blue\",underlined:\"true\"}\
+{text:\"tp\",color:\"gray\"},{text:\" | \",color:\"white\"},\
+{text:\"ls \",color:\"gray\"},{text:\"[label]\",color:\"blue\",underlined:\"true\"}\
 ]}",params->s_tokens[0]);
     return 0;
 }
@@ -668,6 +711,36 @@ int track_tp(int kind,const char* message,const callback_parameter* params)
         return 0;
     }
     return 1;
+}
+int track_ls(int kind,const char* message,const callback_parameter* params)
+{
+    /* for this command, we'll use the C stdio library directly to buffer the 
+       'tellraw' command that we'll send to the user */
+    struct tree_key* key;
+    const char* nspace;
+    if (params->s_top >= 2) {
+        if (check_namespace_access(params->s_tokens[1],params->s_tokens[0]) == 1) {
+            issue_command_str("tellraw %s {text:\"Access to namespace %s is denied\",color:\"red\"}",params->s_tokens[0],params->s_tokens[1]);
+            return 1;
+        }
+        nspace = params->s_tokens[1];
+    }
+    else
+        nspace = params->s_tokens[0];
+    key = tree_lookup(&database,nspace);
+    if (key == NULL) {
+        issue_command_str("tellraw %s {text:\"No entries for namespace %s\",color:\"red\"}",params->s_tokens[0],nspace);
+        return 1;
+    }
+    /* write the start of the message */
+    printf("tellraw %s {text:\"Contents of %s:\",extra:[{text:\" \"}",params->s_tokens[0],nspace);
+    /* traverse the search tree; call 'ls_callback' for each key in the tree;
+       this will write the necessary JSON to 'stdout' for each key */
+    tree_traversal_inorder((struct search_tree*)key->payload,&ls_callback);
+    puts("]}");
+    /* we must manually flush the buffer */
+    fflush(stdout);
+    return 0;
 }
 int track_portmsg(int kind,const char* message,const callback_parameter* params)
 {
