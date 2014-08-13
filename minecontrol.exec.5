@@ -110,6 +110,16 @@ Issued when a player is teleported to a coordinate location
 .RE
 .RS
 .TP
+\fBtestblock-success\fR \fIX-coord\fR \fIY-coord\fR \fIZ-coord\fR
+Issued when a 'testblock' command was successful
+.RE
+.RS
+.TP
+\fBtestblock-failure\fR \fIX-coord\fR \fIY-coord\fR \fIZ-coord\fR \fIactual-block-kind\fR \fIexpected-block-kind\fR
+Issued when a 'testblock' command was unsuccessful
+.RE
+.RS
+.TP
 \fBunknown\fR \fIliteral-message...\fR
 Issued when a message doesn't fit any of the previous criteria; \fIliteral-message...\fR refers to the portion of the
 message after the timestamp and log information

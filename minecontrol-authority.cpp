@@ -26,12 +26,14 @@ using namespace minecraft_controller;
        most frequent message gist kinds first; if you need to add a gist kind,
        make sure to update both arrays */
     static const char* const GENERAL_FORMAT = "[%S] [%S]: %S";
-    static const uint32 MESSAGE_GIST_COUNT = 13;
+    static const uint32 MESSAGE_GIST_COUNT = 17;
     static const minecraft_server_message_gist MESSAGE_GISTS[] = {
         gist_player_chat,
         gist_server_chat,
         gist_server_secret_chat,
         gist_player_teleported,
+        gist_testblock_failure,
+        gist_testblock_success,
         gist_player_login,
         gist_player_id,
         gist_player_join,
@@ -49,6 +51,8 @@ using namespace minecraft_controller;
         "[%S] %S", // gist_server_chat
         "You whisper to %S: %S", // gist_server_secret_chat
         "Teleported %S to %S,%S,%S", // gist_player_teleported
+        "The block at %S,%S,%S is %S(expected: %S).", // gist_testblock_failure
+        "Successfully found the block at %S,%S,%S.", // gist_testblock_success
         "%S[/%S] logged in with entity id %S at (%S, %S, %S)", // gist_player_login
         "UUID of player %S is %S", // gist_player_id
         "%S joined the game", // gist_player_join
@@ -158,6 +162,10 @@ str minecraft_server_message::get_gist_string() const
         return "achievement";
     case gist_player_teleported:
         return "player-teleported";
+    case gist_testblock_success:
+        return "testblock-success";
+    case gist_testblock_failure:
+        return "testblock-failure";
     default:
         return DEFAULT;
     }

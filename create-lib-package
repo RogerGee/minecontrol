@@ -40,7 +40,7 @@ mkdir -p $LIB_DIR
 fi
 
 # make the control file
-echo "Package: libminecontrol-api1.0" > $CONTROL_FILE
+echo "Package: libminecontrol-api1" > $CONTROL_FILE
 echo Version: $2 >> $CONTROL_FILE
 echo "Maintainer: Roger Gee <rpg11a@acu.edu>" >> $CONTROL_FILE
 echo "Description: Minecontrol authority API shared library" >> $CONTROL_FILE

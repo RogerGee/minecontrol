@@ -14,7 +14,8 @@ const char* const MESSAGE_KINDS[] = {
     MESSAGE_SERVER_BIND, MESSAGE_SERVER_SHUTDOWN, MESSAGE_PLAYER_LOGIN,
     MESSAGE_PLAYER_ID, MESSAGE_PLAYER_JOIN, MESSAGE_PLAYER_LOGOUT_CONNECTION,
     MESSAGE_PLAYER_LOST_CONNECTION, MESSAGE_PLAYER_LEAVE,
-    MESSAGE_PLAYER_ACHIEVEMENT, MESSAGE_PLAYER_TELEPORTED, MESSAGE_UNKNOWN
+    MESSAGE_PLAYER_ACHIEVEMENT, MESSAGE_PLAYER_TELEPORTED, MESSAGE_TESTBLOCK_SUCCESS,
+    MESSAGE_TESTBLOCK_FAILURE, MESSAGE_UNKNOWN
 };
 
 const char* const COMMAND_FORMATS[] = {
@@ -760,7 +761,7 @@ int begin_input_tracking(callback hookMain)
             for (i = 0;i < _minecontrol_api_async_top[kind];++i)
                 async_info_invoke(_minecontrol_api_async_hooks[kind] + i,msg.msg_buffer);
             /* check all async threads for termination; it's good to be responsible */
-            for (i = 0;i <= _m_last+1;++i) {
+            for (i = 0;i <= _m_last;++i) {
                 int j;
                 for (j = 0;j < _minecontrol_api_async_top[i];++j)
                     async_info_check(_minecontrol_api_async_hooks[i] + j);

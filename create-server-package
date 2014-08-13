@@ -28,6 +28,7 @@ AUTH_PROGRAMS=auth/journal #auth/construct auth/spawner
 CONTROL_FILE=$INFO_DIR/control
 POSTINST_FILE=$INFO_DIR/postinst
 PRERM_FILE=$INFO_DIR/prerm
+CONFFILES_FILE=$INFO_DIR/conffiles
 
 # create directories if they do not exist
 if [ ! -d $ROOT_DIR ]
@@ -69,11 +70,12 @@ echo Version: $2 >> $CONTROL_FILE
 echo "Maintainer: Roger Gee <rpg11a@acu.edu>" >> $CONTROL_FILE
 echo "Description: A daemon for authorizing and managing Minecraft servers" >> $CONTROL_FILE
 echo Architecture: $3 >> $CONTROL_FILE
-echo "Depends: libc6, libstdc++6, libssl1.0.0, libminecontrol-api1.0" >> $CONTROL_FILE
+echo "Depends: libc6, libstdc++6, libssl1.0.0, libminecontrol-api1" >> $CONTROL_FILE
 
 # copy all files to destinations
 cp prerm-server $PRERM_FILE
 cp postinst-server $POSTINST_FILE
+cp conffiles-server $CONFFILES_FILE
 cp minecontrold $BINARY_DIR
 cp minecontrold.init.d $INITD_DIR/minecontrold
 cp minecontrol.init $SETTINGS_DIR
