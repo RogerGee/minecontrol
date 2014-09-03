@@ -50,7 +50,7 @@ using namespace minecraft_controller;
         "<%S> %S", // gist_player_chat
         "[%S] %S", // gist_server_chat
         "You whisper to %S: %S", // gist_server_secret_chat
-        "Teleported %S to %S,%S,%S", // gist_player_teleported
+        "Teleported %S to %S,%w%S,%w%S", // gist_player_teleported
         "The block at %S,%S,%S is %S(expected: %S).", // gist_testblock_failure
         "Successfully found the block at %S,%S,%S.", // gist_testblock_success
         "%S[/%S] logged in with entity id %S at (%S, %S, %S)", // gist_player_login
@@ -205,9 +205,19 @@ str minecraft_server_message::get_gist_string() const
                         ++source;
                     }
                 }
+                else if (*format == 'w') {
+                    // search through any whitespace (this is mainly used in format strings to
+                    // maintain compatibility between server versions)
+                    while (*source && isspace(*source))
+                        ++source;
+                    ++format;
+                    continue;
+                }
                 else
                     throw minecontrol_authority_error(); // bad format character
-                tokens.push_back(token);
+                // not every special sequence produces a token
+                if (token.length() > 0)
+                    tokens.push_back(token);
             }
             // seek to next character if possible
             if (*format)

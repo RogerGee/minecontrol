@@ -131,7 +131,7 @@ bool crypt_session::decrypt(const char* source,generic_string& result) const
         if (length != _bytes)
             return false;
         // decrypt data
-         if ((decryptLength = RSA_private_decrypt(length,bufferSource,bufferDestin,rsadata,RSA_PKCS1_PADDING)) == -1)
+        if ((decryptLength = RSA_private_decrypt(length,bufferSource,bufferDestin,rsadata,RSA_PKCS1_PADDING)) == -1)
             return false;
         result.clear();
         for (int i = 0;i < decryptLength;++i)
