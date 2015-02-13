@@ -357,11 +357,15 @@ bool controller_client::command_start(rstream& kstream,rstream& vstream)
     handle = minecraft_server_manager::allocate_server();
     handle->set_clientid( sock->get_accept_id() );
     auto cond = handle->pserver->begin(info);
-    client_log(minecontrold::standardLog) << cond << endline;
-    if ( errors.has_input() )
-        (cond==minecraft_server::mcraft_start_success ? prepare_list_message() : prepare_list_error()) << cond << newline << errors << flush;
-    else
-        (cond==minecraft_server::mcraft_start_success ? prepare_message() : prepare_error()) << cond << flush;
+    client_log(minecontrold::standardLog) << cond << " {" << handle->pserver->get_internal_id() << '}' << endline;
+    rstream& response = cond==minecraft_server::mcraft_start_success ? prepare_list_message() : prepare_list_error();
+    response << cond;
+    // place error output into the message to client
+    if ( errors.has_input() ) {
+        response << newline;
+        response.place(errors);
+    }
+    response.flush_output();
     connection << msgbuf.get_message();
     minecraft_server_manager::attach_server(handle);
     return true;
@@ -573,12 +577,13 @@ bool controller_client::command_stop(rstream& kstream,rstream& vstream)
         return false;
     }
     if (authPID == -1) {
+        uint32 svrid = servers[i]->pserver->get_internal_id();
         auto status = servers[i]->pserver->end();
         prepare_message() << status << flush;
         connection << msgbuf.get_message();
         // use the original id in log message to map closing server
         // to the client session that started it
-        minecontrold::standardLog << '{' << servers[i]->get_clientid() << "} " << status << endline;
+        minecontrold::standardLog << '{' << servers[i]->get_clientid() << "} " << status << " {" << svrid << '}' << endline;
     }
     else {
         minecontrol_authority* auth = servers[i]->pserver->get_authority();

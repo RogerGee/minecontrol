@@ -30,12 +30,20 @@ minecraft_server_info::minecraft_server_info(bool createNew,const char* serverNa
 {
     // set extended property defaults
     serverTime = uint64(-1);
-    // read in server props if server is pre-existing
-    path p(userInformation.homeDirectory);
-    p += MINECRAFT_USER_DIRECTORY;
-    p += serverName;
-    if (!isNew && p.exists()) {
-        file_stream fstream( filename(p,"server.properties").get_full_name().c_str() );
+    // read in server props if server is pre-existing; we must read the minecontrol init file to see if an alternate home exists
+    minecraft_server_init_manager initInfo;
+    initInfo.read_from_file();
+    path serverDir;
+    if (initInfo.alternate_home().length() > 0) {
+        serverDir = initInfo.alternate_home();
+        serverDir += userInfo.userName;
+    }
+    else
+        serverDir = userInformation.homeDirectory;
+    serverDir += MINECRAFT_USER_DIRECTORY;
+    serverDir += serverName;
+    if (!isNew && serverDir.exists()) {
+        file_stream fstream( filename(serverDir,"server.properties").get_full_name().c_str() );
         if ( fstream.get_device().is_valid_context() )
             _properties.read(fstream);
     }
@@ -660,7 +668,7 @@ void minecraft_server::_setup_error_file(const str& name)
     for (size_type i = ss.get_device().length();i<80;++i)
         ss.put('-');
     ss << newline;
-    write(_fderr,ss.get_device().c_str(),ss.get_device().length());
+    (void)write(_fderr,ss.get_device().c_str(),ss.get_device().length());
 }
 void minecraft_server::_close_error_file(const str& name)
 {
@@ -867,8 +875,11 @@ server_handle::server_handle()
     _mutex.lock();
     for (size_type i = 0;i<_handles.size();i++) {
         if (_handles[i]->pserver != NULL) {
-            if ( _handles[i]->pserver->was_started() )
-                minecontrold::standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() << endline;
+            if ( _handles[i]->pserver->was_started() ) {
+                uint32 id = _handles[i]->pserver->get_internal_id();
+                minecontrold::standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() 
+                                          << " {" << id << '}' << endline;
+            }
             delete _handles[i]->pserver;
             _handles[i]->pserver = NULL;
         }
@@ -889,8 +900,11 @@ server_handle::server_handle()
                 // call its destructor (cleanly ends the server) and free the memory
                 // if the server was already started, call end such that we can record its
                 // exit condition
-                if ( _handles[i]->pserver->was_started() )
-                    minecontrold::standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() << endline;
+                if ( _handles[i]->pserver->was_started() ) {
+                    uint32 id = _handles[i]->pserver->get_internal_id();
+                    minecontrold::standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() << " {" << id
+                                              << '}' << endline;
+                }
                 delete _handles[i]->pserver;
                 _handles[i]->pserver = NULL;
             }

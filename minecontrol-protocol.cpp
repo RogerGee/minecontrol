@@ -367,6 +367,7 @@ uint32 minecontrol_message_buffer::count_fields() const
         uint32 i;
         bool state = true;
         const char* data = &_bufOut.peek();
+        i = 0;
         while (i < _bufOut.size()) {
             if (state) {
                 ++cnt;

@@ -1,0 +1,49 @@
+#!/bin/bash
+# create-auth-package
+# usage: ./create-auth-package build-dir version-string architecture
+
+# check usage
+if [ $# -lt 3 ]
+then
+echo usage: $0 build-dir version-string architecture
+exit 1
+fi
+
+# directories
+ROOT_DIR=$1
+INFO_DIR=$ROOT_DIR/DEBIAN
+AUTH_DIR=$ROOT_DIR/usr/lib/minecontrol
+
+# source files
+AUTH_PROGRAMS=auth/journal #auth/construct auth/spawner
+
+# destination files
+CONTROL_FILE=$INFO_DIR/control
+
+# create directories if they do not exist
+if [ ! -d $ROOT_DIR ]
+then
+mkdir $ROOT_DIR
+fi
+if [ ! -d $INFO_DIR ]
+then
+mkdir $INFO_DIR
+fi
+if [ ! -d $AUTH_DIR ]
+then
+mkdir -p $AUTH_DIR
+fi
+
+# make the control file
+echo "Package: minecontrol-auth" > $CONTROL_FILE
+echo Version: $2 >> $CONTROL_FILE
+echo "Maintainer: Roger Gee <rpg11a@acu.edu>" >> $CONTROL_FILE
+echo "Description: High performance minecontrol authority programs" >> $CONTROL_FILE
+echo Architecture: $3 >> $CONTROL_FILE
+echo "Depends: libc6, libminecontrol-api1" >> $CONTROL_FILE
+
+# copy all files to destinations
+cp $AUTH_PROGRAMS $AUTH_DIR
+
+# create .deb package
+dpkg-deb --build $ROOT_DIR .

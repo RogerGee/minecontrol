@@ -10,7 +10,6 @@ PROGRAM_NAME_CLIENT = minecontrol
 PROGRAM_NAME_CLIENT_DEBUG = minecontrol-debug
 OBJECT_DIRECTORY_NAME = obj/
 OBJECT_DIRECTORY_NAME_DEBUG = dobj/
-LINK = g++
 LIBRARY_SERVER = -lrlibrary -pthread -lcrypt -lcrypto
 LIBRARY_CLIENT = -lrlibrary -pthread -lcrypto -lncurses
 OUT = -o 
@@ -20,11 +19,13 @@ ifeq ($(MAKECMDGOALS),debug)
 PROGRAM_SERVER = $(PROGRAM_NAME_SERVER_DEBUG)
 PROGRAM_CLIENT = $(PROGRAM_NAME_CLIENT_DEBUG)
 COMPILE = g++ -g -c -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-unused-variable -pedantic-errors --std=gnu++0x -DMINECONTROL_TEST
+LINK = g++
 OBJECT_DIRECTORY = $(OBJECT_DIRECTORY_NAME_DEBUG)
 else
 PROGRAM_SERVER = $(PROGRAM_NAME_SERVER)
 PROGRAM_CLIENT = $(PROGRAM_NAME_CLIENT)
-COMPILE = g++ -c -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-unused-variable -pedantic-errors --std=gnu++0x
+COMPILE = g++ -c -O3 -Wall -Werror -Wextra -Wshadow -Wfatal-errors -Wno-error=unused-result -Wno-unused-variable -pedantic-errors --std=gnu++0x
+LINK = g++ -s
 OBJECT_DIRECTORY = $(OBJECT_DIRECTORY_NAME)
 endif
 

@@ -31,6 +31,7 @@ static short journal_allow_tell = 1; /* whisper journaled location coordinates *
 static short journal_allow_private = 1; /* allow private namespaces for journaled locations */
 static short journal_allow_public = 0; /* allow a public namespace for journaled locations */
 static short journal_allow_ls = 1; /* allow listing of locations within a namespace to a player */
+static short journal_allow_book = 0; /* allow book generation for player's journal (1.8+) */
 
 /* journal location database: map user name to location tree which maps location name to location coordinates */
 static struct search_tree database; /* key -> struct search_tree : key -> coord* */
@@ -49,8 +50,9 @@ static const char* const JOURNAL_FILE = "journal";
 static void write_journal_file();
 static void read_journal_file();
 
-/* this callback is used to traverse the location database */
+/* these callbacks are used to traverse the location database */
 static void ls_callback(struct tree_key*);
+static void book_callback(struct tree_key*);
 
 /* helpers */
 static coord* add_default_entry(const char* user,const char* label);
@@ -67,6 +69,7 @@ static int track_up(int kind,const char* message,const callback_parameter* param
 static int track_rm(int kind,const char* message,const callback_parameter* params);
 static int track_tp(int kind,const char* message,const callback_parameter* params);
 static int track_ls(int kind,const char* message,const callback_parameter* params);
+static int track_book(int kind,const char* message,const callback_parameter* params);
 static int track_portmsg(int kind,const char* message,const callback_parameter* params);
 
 /* main: load/unload database; process messages from minecontrol server */
@@ -104,6 +107,10 @@ int main(int argc,const char* argv[])
     if (journal_allow_ls) {
         hook_tracking_function(&track_ls,m_chat,"%s journal ls");
         hook_tracking_function(&track_ls,m_chat,"%s journal ls %s");
+    }
+    if (journal_allow_book) {
+        hook_tracking_function(&track_book,m_chat,"%s journal book");
+        hook_tracking_function(&track_book,m_chat,"%s journal book %s");
     }
     hook_tracking_function(&track_portmsg,m_playerteleported,"%s %n %n %n");
     /* begin handling messages */
@@ -190,6 +197,8 @@ void process_command_line_options(int argc,const char* argv[])
                 journal_allow_public = state;
             else if (strcmp(op,"ls") == 0)
                 journal_allow_ls = state;
+            else if (strcmp(op,"book") == 0)
+                journal_allow_book = state;
             else
                 fprintf(stderr,"%s: ignoring unrecognized option '%s'\n",PROGRAM_NAME,op);
         }
@@ -456,6 +465,18 @@ void ls_callback(struct tree_key* key)
     printf(",{text:\"[\"},{text:\"%s\",color:\"blue\",clickEvent:{action:\"suggest_command\",value:\"/tp %d %d %d\"}},{text:\"] \"}",
         key->key,record->coord_x,record->coord_y,record->coord_z);
 }
+static short book_callback_state = 0;
+static const char* book_callback_player = NULL;
+void book_callback(struct tree_key* key)
+{
+    coord* record;
+    record = (coord*)key->payload;
+    if (book_callback_state%13 == 0)
+        printf("]}\",\"{text:'',extra:[{text:''}");
+    printf(",{text:'%s\\n',clickEvent:{action:run_command,value:'/tp %s %d %d %d'}}",
+        key->key,book_callback_player,record->coord_x,record->coord_y,record->coord_z);
+    ++book_callback_state;
+}
 
 coord* add_default_entry(const char* user,const char* label)
 {
@@ -618,7 +639,7 @@ int track_main(int kind,const char* message)
 int track_help(int kind,const char* message,const callback_parameter* params)
 {
     issue_command_str("tellraw %s {text:\"journal \",color:\"white\",\
-extra:[{text:\"add\",color:\"gray\"},{text:\" | \",color:\"white\"},\
+extra:[{text:\"add\",color:\"gray\"},{text:\" | \",color:\"white\"}, \
 {text:\"tell\",color:\"gray\"},{text:\" | \",color:\"white\"},\
 {text:\"up\",color:\"gray\"},{text:\" | \",color:\"white\"},\
 {text:\"rm\",color:\"gray\"},{text:\" | \",color:\"white\"},\
@@ -739,6 +760,39 @@ int track_ls(int kind,const char* message,const callback_parameter* params)
     tree_traversal_inorder((struct search_tree*)key->payload,&ls_callback);
     puts("]}");
     /* we must manually flush the buffer */
+    fflush(stdout);
+    return 0;
+}
+int track_book(int kind,const char* message,const callback_parameter* params)
+{
+    /* generate book containing location journal */
+    struct tree_key* key;
+    const char* nspace;
+    char title[17];
+    if (params->s_top >= 2) {
+        if (check_namespace_access(params->s_tokens[1],params->s_tokens[0]) == 1) {
+            issue_command_str("tellraw %s {text:\"Access to namespace %s is denied\",color:\"red\"}",params->s_tokens[0],params->s_tokens[1]);
+            return 1;
+        }
+        nspace = params->s_tokens[1];
+    }
+    else
+        nspace = params->s_tokens[0];
+    key = tree_lookup(&database,nspace);
+    if (key == NULL) {
+        issue_command_str("tellraw %s {text:\"No entries for namespace %s\",color:\"red\"}",params->s_tokens[0],nspace);
+        return 1;
+    }
+    /* the book title must not exceed 16 characters; */
+    strncpy(title,nspace,sizeof(title)-1);
+    /* write the start of the message; thanks to Ethan Rutherford for developing this command string */
+    printf("give %s written_book 1 0 {author:\"%s\",title:\"%s\",pages:[\"{text:'',extra:[{text:'This is a magic book of warps.'}",
+        params->s_tokens[0],params->s_tokens[0],title);
+    book_callback_state = 0;
+    book_callback_player = params->s_tokens[0];
+    tree_traversal_inorder((struct search_tree*)key->payload,&book_callback);
+    puts("]}\"]}");
+    /* manually flush the output buffer to send command to Minecraft */
     fflush(stdout);
     return 0;
 }

@@ -20,7 +20,7 @@ static const char* DOMAIN_NAME = "@minecontrol";
 static const char* SERVICE_PORT = "44446";
 static const char* PROGRAM_NAME;
 static const char* const CLIENT_NAME = "minecontrol-standard";
-static const char* const PROGRAM_VERSION = "1.0";
+static const char* const PROGRAM_VERSION = "1.1";
 static const char PROMPT_MAIN = '#';
 static const char PROMPT_CONSOLE = '$';
 
@@ -170,6 +170,8 @@ int main(int argc,const char* argv[])
         stdConsole << session.serverName << '-' << session.serverVersion << PROMPT_MAIN << ' ';
         session.inputStream.close(); // close any last session
         stdConsole.getline( session.inputStream.get_device() );
+        if (!stdConsole.get_input_success())
+            break;
 
         session.inputStream >> command;
         rutil_to_lower_ref(command);
