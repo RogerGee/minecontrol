@@ -87,7 +87,7 @@ bool minecraft_server_info::set_prop(const str& key,const str& value,bool applyI
 minecraft_server_info::_prop_process_flag minecraft_server_info::_process_ex_prop(const str& key,const str& value)
 {
     const_stringstream ss(value);
-    if (key == "servertime") { // uint64: how long the mcraft server stays alive in seconds
+    if (key == "servertime" || key == "server-time") { // uint64: how long the mcraft server stays alive in seconds
         if ( !(ss >> serverTime) )
             return _prop_process_bad_value;
         // assume server time was in hours; compute seconds

@@ -243,7 +243,7 @@ void minecraft_controller_log_stream::_outDevice()
 // minecraft-controller::minecontrold
 /*static*/ minecraft_controller_log_stream minecontrold::standardLog;
 /*static*/ const char* minecontrold::SERVER_NAME = "minecontrold";
-/*static*/ const char* minecontrold::SERVER_VERSION = "1.2.2";
+/*static*/ const char* minecontrold::SERVER_VERSION = "1.2.3";
 void minecontrold::shutdown_minecontrold()
 {
     minecontrold::standardLog << "the server is going down; an internal request was issued" << endline;

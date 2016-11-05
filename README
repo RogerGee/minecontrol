@@ -75,7 +75,7 @@ server (some certainly better than others).
 --------------------------------------------------------------------------------
 B. Building
 
-minecontrol was built for Linux systems (think POSIX). You will need a C and C++
+minecontrol was built for Linux systems under POSIX. You will need a C and C++
 compiler to build this project. You will also need several external library
 development files. The project makefile should be the simplest way to build this
 project. Not accounting for compiler version differences (I used GCC 4.6.3 on
@@ -147,4 +147,4 @@ I welcome bug reports to "Roger Gee" <rpg11a@acu.edu>.
 
 Please respect the Minecraft EULA found here:
  https://account.mojang.com/documents/minecraft_eula
-Be honest and buy legitamate copies of the Minecraft software.
+Be honest and buy legitimate copies of the Minecraft software.

@@ -462,7 +462,7 @@ void ls_callback(struct tree_key* key)
 {
     coord* record;
     record = (coord*)key->payload;
-    printf(",{text:\"[\"},{text:\"%s\",color:\"blue\",clickEvent:{action:\"suggest_command\",value:\"/tp %d %d %d\"}},{text:\"] \"}",
+    printf(",{\"text\":\"[\"},{\"text\":\"%s\",\"color\":\"blue\",\"clickEvent\":{\"action\":\"suggest_command\",\"value\":\"/tp %d %d %d\"}},{\"text\":\"] \"}",
         key->key,record->coord_x,record->coord_y,record->coord_z);
 }
 static short book_callback_state = 0;
@@ -472,8 +472,8 @@ void book_callback(struct tree_key* key)
     coord* record;
     record = (coord*)key->payload;
     if (book_callback_state%13 == 0)
-        printf("]}\",\"{text:'',extra:[{text:''}");
-    printf(",{text:'%s\\n',clickEvent:{action:run_command,value:'/tp %s %d %d %d'}}",
+        printf("]}\",\"{\"text\":'',\"extra\":[{\"text\":''}");
+    printf(",{\"text\":'%s\\n',\"clickEvent\":{\"action\":run_command,\"value\":'/tp %s %d %d %d'}}",
         key->key,book_callback_player,record->coord_x,record->coord_y,record->coord_z);
     ++book_callback_state;
 }
@@ -576,17 +576,17 @@ static int parse_label(const char* result[],char* player,char* label)
         result[1] = label + i+1;
         /* check namespace access */
         if (label[0] == 0) {
-            issue_command_str("tellraw %s {text:\"Incorrect namespace: cannot be empty\",color:\"red\"}",player);
+            issue_command_str("tellraw %s {\"text\":\"Incorrect namespace: cannot be empty\",\"color\":\"red\"}",player);
             return 1;
         }
         if (check_namespace_access(label,player) == 1) {
-            issue_command_str("tellraw %s {text:\"Access to namespace %s is not authorized\",color:\"red\"}",player,label);
+            issue_command_str("tellraw %s {\"text\":\"Access to namespace %s is not authorized\",\"color\":\"red\"}",player,label);
             return 1;
         }
     }
     else {
         if (!journal_allow_private) {
-            issue_command_str("tellraw %s {text:\"Access to private namespaces is denied for this session\",color:\"red\"}",player);
+            issue_command_str("tellraw %s {\"text\":\"Access to private namespaces is denied for this session\",\"color\":\"red\"}",player);
             return 1;
         }
         if (journal_allow_public && label[0]=='*') {
@@ -602,7 +602,7 @@ static int parse_label(const char* result[],char* player,char* label)
     }
     /* check for empty label parts */
     if (result[1][0] == 0) {
-        issue_command_str("tellraw %s {text:\"Incorrect label: cannot be empty\",color:\"red\"}",player);
+        issue_command_str("tellraw %s {\"text\":\"Incorrect label: cannot be empty\",\"color\":\"red\"}",player);
         return 1;
     }
     return 0;
@@ -615,7 +615,7 @@ static coord* preop_task(const char* label[],char* player,char* inputlabel)
         return NULL;
     record = lookup_entry(label[0],label[1]);
     if (record == NULL)
-        issue_command_str("tellraw %s {text:\"Location does not exist in database\",color:\"red\"}",player);
+        issue_command_str("tellraw %s {\"text\":\"Location does not exist in database\",\"color\":\"red\"}",player);
     return record;
 }
 int track_main(int kind,const char* message)
@@ -638,13 +638,13 @@ int track_main(int kind,const char* message)
 }
 int track_help(int kind,const char* message,const callback_parameter* params)
 {
-    issue_command_str("tellraw %s {text:\"journal \",color:\"white\",\
-extra:[{text:\"add\",color:\"gray\"},{text:\" | \",color:\"white\"}, \
-{text:\"tell\",color:\"gray\"},{text:\" | \",color:\"white\"},\
-{text:\"up\",color:\"gray\"},{text:\" | \",color:\"white\"},\
-{text:\"rm\",color:\"gray\"},{text:\" | \",color:\"white\"},\
-{text:\"tp\",color:\"gray\"},{text:\" | \",color:\"white\"},\
-{text:\"ls \",color:\"gray\"},{text:\"[label]\",color:\"blue\",underlined:\"true\"}\
+    issue_command_str("tellraw %s {\"text\":\"journal \",\"color\":\"white\",\
+\"extra\":[{\"text\":\"add\",\"color\":\"gray\"},{\"text\":\" | \",\"color\":\"white\"}, \
+{\"text\":\"tell\",\"color\":\"gray\"},{\"text\":\" | \",\"color\":\"white\"},\
+{\"text\":\"up\",\"color\":\"gray\"},{\"text\":\" | \",\"color\":\"white\"},\
+{\"text\":\"rm\",\"color\":\"gray\"},{\"text\":\" | \",\"color\":\"white\"},\
+{\"text\":\"tp\",\"color\":\"gray\"},{\"text\":\" | \",\"color\":\"white\"},\
+{\"text\":\"ls \",\"color\":\"gray\"},{\"text\":\"[label]\",\"color\":\"blue\",\"underlined\":\"true\"}\
 ]}",params->s_tokens[0]);
     return 0;
 }
@@ -654,7 +654,7 @@ int track_tell(int kind,const char* message,const callback_parameter* params)
     const char* label[2];
     record = preop_task(label,params->s_tokens[0],params->s_tokens[1]);
     if (record != NULL) {
-        issue_command_str("tellraw %s {text:\"%s:%s -> {%c}\",color:\"blue\"}",params->s_tokens[0],label[0],label[1],*record);
+        issue_command_str("tellraw %s {\"text\":\"%s:%s -> {%c}\",\"color\":\"blue\"}",params->s_tokens[0],label[0],label[1],*record);
         return 0;
     }
     return 1;
@@ -677,12 +677,12 @@ int track_add(int kind,const char* message,const callback_parameter* params)
             /* finally, teleport the player to their current location so as to prompt a
                teleport message that indicates their current location */
             issue_command_str("tp %s ~ ~ ~",params->s_tokens[0]);
-            issue_command_str("tellraw %s {text:\"Added location to database\",color:\"blue\"}",params->s_tokens[0]);
+            issue_command_str("tellraw %s {\"text\":\"Added location to database\",\"color\":\"blue\"}",params->s_tokens[0]);
             database_updated = 1;
             return 0;
         }
         else
-            issue_command_str("tellraw %s {text:\"The label %s:%s is already in use\",color:\"red\"}",params->s_tokens[0],label[0],label[1]);
+            issue_command_str("tellraw %s {\"text\":\"The label %s:%s is already in use\",\"color\":\"red\"}",params->s_tokens[0],label[0],label[1]);
     }
     return 1;
 }
@@ -701,7 +701,7 @@ int track_up(int kind,const char* message,const callback_parameter* params)
             key->payload = record;
         /* issue the teleport command so when can get the player's location */
         issue_command_str("tp %s ~ ~ ~",params->s_tokens[0]);
-        issue_command_str("tellraw %s {text:\"Location updated\",color:\"blue\"}",params->s_tokens[0]);
+        issue_command_str("tellraw %s {\"text\":\"Location updated\",\"color\":\"blue\"}",params->s_tokens[0]);
         database_updated = 1;
         return 0;
     }
@@ -712,12 +712,12 @@ int track_rm(int kind,const char* message,const callback_parameter* params)
     const char* label[2];
     if (parse_label(label,params->s_tokens[0],params->s_tokens[1]) != 1) {
         if (remove_entry(label[0],label[1]) != 1) {
-            issue_command_str("tellraw %s {text:\"Location removed from database\",color:\"blue\"}",params->s_tokens[0]);
+            issue_command_str("tellraw %s {\"text\":\"Location removed from database\",\"color\":\"blue\"}",params->s_tokens[0]);
             database_updated = 1;
             return 0;
         }
         else
-            issue_command_str("tellraw %s {text:\"Location does not exist in database\",color:\"red\"}",params->s_tokens[0]);
+            issue_command_str("tellraw %s {\"text\":\"Location does not exist in database\",\"color\":\"red\"}",params->s_tokens[0]);
     }
     return 1;
 }
@@ -727,7 +727,7 @@ int track_tp(int kind,const char* message,const callback_parameter* params)
     const char* label[2];
     record = preop_task(label,params->s_tokens[0],params->s_tokens[1]);
     if (record != NULL) {
-        issue_command_str("tellraw %s {text:\"Teleported to location %s:%s\",color:\"blue\"}",params->s_tokens[0],label[0],label[1]);
+        issue_command_str("tellraw %s {\"text\":\"Teleported to location %s:%s\",\"color\":\"blue\"}",params->s_tokens[0],label[0],label[1]);
         issue_command_str("tp %s %c",params->s_tokens[0],*record);
         return 0;
     }
@@ -741,7 +741,7 @@ int track_ls(int kind,const char* message,const callback_parameter* params)
     const char* nspace;
     if (params->s_top >= 2) {
         if (check_namespace_access(params->s_tokens[1],params->s_tokens[0]) == 1) {
-            issue_command_str("tellraw %s {text:\"Access to namespace %s is denied\",color:\"red\"}",params->s_tokens[0],params->s_tokens[1]);
+            issue_command_str("tellraw %s {\"text\":\"Access to namespace %s is denied\",\"color\":\"red\"}",params->s_tokens[0],params->s_tokens[1]);
             return 1;
         }
         nspace = params->s_tokens[1];
@@ -750,11 +750,11 @@ int track_ls(int kind,const char* message,const callback_parameter* params)
         nspace = params->s_tokens[0];
     key = tree_lookup(&database,nspace);
     if (key == NULL) {
-        issue_command_str("tellraw %s {text:\"No entries for namespace %s\",color:\"red\"}",params->s_tokens[0],nspace);
+        issue_command_str("tellraw %s {\"text\":\"No entries for namespace %s\",\"color\":\"red\"}",params->s_tokens[0],nspace);
         return 1;
     }
     /* write the start of the message */
-    printf("tellraw %s {text:\"Contents of %s:\",extra:[{text:\" \"}",params->s_tokens[0],nspace);
+    printf("tellraw %s {\"text\":\"Contents of %s:\",\"extra\":[{\"text\":\" \"}",params->s_tokens[0],nspace);
     /* traverse the search tree; call 'ls_callback' for each key in the tree;
        this will write the necessary JSON to 'stdout' for each key */
     tree_traversal_inorder((struct search_tree*)key->payload,&ls_callback);
@@ -771,7 +771,7 @@ int track_book(int kind,const char* message,const callback_parameter* params)
     char title[17];
     if (params->s_top >= 2) {
         if (check_namespace_access(params->s_tokens[1],params->s_tokens[0]) == 1) {
-            issue_command_str("tellraw %s {text:\"Access to namespace %s is denied\",color:\"red\"}",params->s_tokens[0],params->s_tokens[1]);
+            issue_command_str("tellraw %s {\"text\":\"Access to namespace %s is denied\",\"color\":\"red\"}",params->s_tokens[0],params->s_tokens[1]);
             return 1;
         }
         nspace = params->s_tokens[1];
@@ -780,13 +780,13 @@ int track_book(int kind,const char* message,const callback_parameter* params)
         nspace = params->s_tokens[0];
     key = tree_lookup(&database,nspace);
     if (key == NULL) {
-        issue_command_str("tellraw %s {text:\"No entries for namespace %s\",color:\"red\"}",params->s_tokens[0],nspace);
+        issue_command_str("tellraw %s {\"text\":\"No entries for namespace %s\",\"color\":\"red\"}",params->s_tokens[0],nspace);
         return 1;
     }
     /* the book title must not exceed 16 characters; */
     strncpy(title,nspace,sizeof(title)-1);
     /* write the start of the message; thanks to Ethan Rutherford for developing this command string */
-    printf("give %s written_book 1 0 {author:\"%s\",title:\"%s\",pages:[\"{text:'',extra:[{text:'This is a magic book of warps.'}",
+    printf("give %s written_book 1 0 {\"author\":\"%s\",\"title\":\"%s\",\"pages\":[\"{\"text\":'',\"extra\":[{\"text\":'This is a magic book of warps.'}",
         params->s_tokens[0],params->s_tokens[0],title);
     book_callback_state = 0;
     book_callback_player = params->s_tokens[0];
