@@ -51,8 +51,8 @@ using namespace minecraft_controller;
         "[%S] %S", // gist_server_chat
         "You whisper to %S: %S", // gist_server_secret_chat
         "Teleported %S to %S,%w%S,%w%S", // gist_player_teleported
-        "The block at %S,%S,%S is %S(expected: %S).", // gist_testblock_failure
-        "Successfully found the block at %S,%S,%S.", // gist_testblock_success
+        "The block at %S,%w%S,%w%S is %S%o (expected: %S)%o.", // gist_testblock_failure
+        "Successfully found the block at %S,%w%S,%w%S%o.", // gist_testblock_success
         "%S[/%S] logged in with entity id %S at (%S, %S, %S)", // gist_player_login
         "UUID of player %S is %S", // gist_player_id
         "%S joined the game", // gist_player_join
@@ -189,14 +189,37 @@ str minecraft_server_message::get_gist_string() const
                 if (*format == 'S') {
                     // find token until delimiter character
                     char delim;
+                    char optional = -1;
                     ++format;
                     delim = *format;
-                    while (*source && *source!=delim) {
+                    if (delim == '%') {
+                        // Handle format specifier
+                        char nxt = format[1];
+                        if (nxt != 0) {
+                            if (nxt == 'o' && format[2] != 0) {
+                                // Allow for optional delimiter characters. If
+                                // the optional character is not matched then
+                                // the next character must be matched.
+                                delim = format[2];
+                                optional = format[3];
+                            }
+                            else {
+                                // Cannot have format specifier as delimiter.
+                                throw minecontrol_authority_error();
+                            }
+                            format += 2;
+                        }
+                    }
+                    while (*source && *source!=delim && *source!=optional) {
                         token.push_back(*source);
                         ++source;
                     }
-                    if (*source != delim)
+                    if (*source != delim && *source != optional) {
                         return false;
+                    }
+                    if (*source == optional) {
+                        format += 1;
+                    }
                 }
                 else if (*format == 's') {
                     // find token until whitespace
@@ -212,6 +235,17 @@ str minecraft_server_message::get_gist_string() const
                         ++source;
                     ++format;
                     continue;
+                }
+                else if (*format == 'o') {
+                    // The next character is optional. This cannot appear at the
+                    // end of a string for obvious reasons.
+                    if (format[1] != 0) {
+                        if (*source == format[1]) {
+                            source += 1;
+                        }
+                        format += 2;
+                        continue;
+                    }
                 }
                 else
                     throw minecontrol_authority_error(); // bad format character
@@ -233,6 +267,16 @@ str minecraft_server_message::get_gist_string() const
         ++format;
         ++source;
     }
+
+    // Handle the case where the optional character to be (potentially) omitted
+    // occurs at the end of string.
+    if (*format == '%' && format[1] == 'o' && format[2] != 0) {
+        if (*source == format[2]) {
+            source += 1;
+        }
+        format += 3;
+    }
+
     return *format == *source;
 }
 
