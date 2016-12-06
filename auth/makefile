@@ -50,9 +50,9 @@ $(OBJDIR)tree.o: tree.c tree.h
 
 # rules for 'journal' program
 journal: $(OBJECTS_JOURNAL) $(AUTH_LIB_REALNAME)
-	$(LINK) journal $(OBJECTS_JOURNAL) $(AUTH_LIB_REALNAME)
+	$(LINK) journal $(OBJECTS_JOURNAL) $(AUTH_LIB_REALNAME) -lm
 journal-debug: $(OBJECTS_JOURNAL) $(OBJECTS_LIB)
-	$(LINK) journal-debug $(OBJECTS_JOURNAL) $(OBJECTS_LIB)
+	$(LINK) journal-debug $(OBJECTS_JOURNAL) $(OBJECTS_LIB) -lm
 $(OBJDIR)journal.o: journal.c tree.h minecontrol-api.h
 	$(COMPILE)$@ journal.c
 

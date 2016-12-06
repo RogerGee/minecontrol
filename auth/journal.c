@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include <ctype.h>
 #include <errno.h>
 #include <unistd.h>
@@ -71,6 +72,7 @@ static int track_tp(int kind,const char* message,const callback_parameter* param
 static int track_ls(int kind,const char* message,const callback_parameter* params);
 static int track_book(int kind,const char* message,const callback_parameter* params);
 static int track_portmsg(int kind,const char* message,const callback_parameter* params);
+static int track_diff(int kind,const char* message,const callback_parameter* params);
 
 /* main: load/unload database; process messages from minecontrol server */
 int main(int argc,const char* argv[])
@@ -102,6 +104,7 @@ int main(int argc,const char* argv[])
     hook_tracking_function(&track_add,m_chat,"%s journal add %s");
     hook_tracking_function(&track_up,m_chat,"%s journal up %s");
     hook_tracking_function(&track_rm,m_chat,"%s journal rm %s");
+    hook_tracking_function(&track_diff,m_chat,"%s journal diff %s %s");
     if (journal_allow_tp)
         hook_tracking_function(&track_tp,m_chat,"%s journal tp %s");
     if (journal_allow_ls) {
@@ -646,6 +649,9 @@ int track_help(int kind,const char* message,const callback_parameter* params)
 {\"text\":\"tp\",\"color\":\"gray\"},{\"text\":\" | \",\"color\":\"white\"},\
 {\"text\":\"ls \",\"color\":\"gray\"},{\"text\":\"[label]\",\"color\":\"blue\",\"underlined\":\"true\"}\
 ]}",params->s_tokens[0]);
+    issue_command_str("tellraw %s {\"text\":\"journal \",\"color\":\"white\",\
+\"extra\":[{\"text\":\"diff \",\"color\":\"gray\"},{\"text\":\"[label]\",\"color\":\"blue\",\"underlined\":\"true\"},\
+{\"text\":\" \"},{\"text\":\"[label]\",\"color\":\"blue\",\"underlined\":\"true\"}]}",params->s_tokens[0]);
     return 0;
 }
 int track_tell(int kind,const char* message,const callback_parameter* params)
@@ -813,4 +819,33 @@ int track_portmsg(int kind,const char* message,const callback_parameter* params)
         return 0;
     }
     return 1;
+}
+
+int track_diff(int kind,const char* message,const callback_parameter* params)
+{
+    /* Compute the difference between two locations. This is given in number of
+     * blocks in the horizontal plane.
+     */
+
+    int amt;
+    coord* recordA;
+    coord* recordB;
+    const char* labelA[2];
+    const char* labelB[2];
+
+    recordA = preop_task(labelA,params->s_tokens[0],params->s_tokens[1]);
+    if (recordA == NULL) {
+        return 1;
+    }
+    recordB = preop_task(labelB,params->s_tokens[0],params->s_tokens[2]);
+    if (recordB == NULL) {
+        return 1;
+    }
+
+    amt = (int)round(sqrt(pow(recordB->coord_x - recordA->coord_x,2.0)
+            + pow(recordB->coord_z - recordA->coord_z,2.0)));
+    issue_command_str("tellraw %s {\"text\":\"%d blocks\",\"color\":\"blue\"}",
+        params->s_tokens[0],amt);
+
+    return 0;
 }
