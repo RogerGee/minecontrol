@@ -63,10 +63,10 @@ int main(int argc,const char* argv[])
         fatal_error("cannot create signal handler for SIGINT");
     if (::signal(SIGPIPE,SIG_IGN) == SIG_ERR)
         fatal_error("cannot set disposition for signal SIGPIPE");
+    // become a daemon (first so umask is reset before we create sockets)
+    daemonize();
     // attempt to bind server sockets
     create_server_sockets();
-    // become a daemon
-    daemonize();
     // log process start
     minecontrold::standardLog << "process started" << endline;
     // perform startup operations
@@ -89,7 +89,7 @@ bool process_short_option(const char*)
 bool process_long_option(const char* option)
 {
     if ( rutil_strcmp(option,"version") ) {
-        stdConsole << minecontrold::get_server_name() << ' ' << minecontrold::get_server_version() << newline << newline 
+        stdConsole << minecontrold::get_server_name() << ' ' << minecontrold::get_server_version() << newline << newline
                    << "Report bugs (kindly!) to Roger Gee <rpg11a@acu.edu>.\n";
         return true;
     }
@@ -113,7 +113,7 @@ void daemonize()
         ::_exit(1);
     }
     if (pid == 0) { // child process stays alive
-        // become the leader of a new session and process group; this 
+        // become the leader of a new session and process group; this
         // removes the controlling terminal from the process group
         if (::setsid() == -1)
             fatal_error("cannot become leader of new session");
@@ -243,7 +243,7 @@ void minecraft_controller_log_stream::_outDevice()
 // minecraft-controller::minecontrold
 /*static*/ minecraft_controller_log_stream minecontrold::standardLog;
 /*static*/ const char* minecontrold::SERVER_NAME = "minecontrold";
-/*static*/ const char* minecontrold::SERVER_VERSION = "1.2.3";
+/*static*/ const char* minecontrold::SERVER_VERSION = "1.2.4";
 void minecontrold::shutdown_minecontrold()
 {
     minecontrold::standardLog << "the server is going down; an internal request was issued" << endline;

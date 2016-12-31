@@ -163,7 +163,8 @@ namespace minecraft_controller
         rtypes::int32 _childID[ALLOWED_CHILDREN]; // parallel array of child process ids
         int _childCnt; // maintain a count of child processes (for convenience)
         mutable mutex _childMtx, _clientMtx; // control cross-thread access
-        mutable rtypes::ulong _threadID; // processing threadID
+        mutable bool _trun;
+        mutable pthread_t _threadID; // processing threadID
         volatile bool _threadCondition;
         volatile bool _consoleEnabled;
 

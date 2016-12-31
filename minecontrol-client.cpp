@@ -5,7 +5,9 @@
 #include "minecraft-server.h" // gets minecontrol-authority.h
 #include <unistd.h>
 #include <pwd.h>
+#ifndef __APPLE__
 #include <shadow.h>
+#endif
 #include <errno.h>
 #include <rlibrary/rutility.h>
 using namespace rtypes;
@@ -107,7 +109,7 @@ controller_client::controller_client(socket* acceptedSocket)
     if (acceptedSocket == NULL)
         throw controller_client_error();
     sock = acceptedSocket;
-    threadID = -1;
+    //threadID = -1;
     threadCondition = true;
     referenceIndex = 0;
 }
@@ -281,8 +283,6 @@ bool controller_client::command_login(rstream& kstream,rstream& vstream) // hand
     }
     // obtain user information
     passwd* pwd;
-    spwd* shadowPwd;
-    const char* pencrypt;
     pwd = getpwnam( username.c_str() );
     if (pwd == NULL) {
         prepare_error() << "Authentication failure: bad username" << flush;
@@ -290,6 +290,9 @@ bool controller_client::command_login(rstream& kstream,rstream& vstream) // hand
         client_log(minecontrold::standardLog) << "authentication failure: bad username '" << username << '\'' << endline;
         return false;
     }
+#ifndef __APPLE__
+    spwd* shadowPwd;
+    const char* pencrypt;
     shadowPwd = getspnam( username.c_str() );
     if (shadowPwd==NULL && errno==EACCES) {
         prepare_error() << "This server cannot log you in because it is not priviledged; this is most likely a mistake; contact your SA" << flush;
@@ -306,6 +309,7 @@ bool controller_client::command_login(rstream& kstream,rstream& vstream) // hand
         client_log(minecontrold::standardLog) << "authentication failure: bad password for user '" << username << '\'' << endline;
         return false;
     }
+#endif
     userInfo.uid = pwd->pw_uid;
     userInfo.gid = pwd->pw_gid;
     userInfo.homeDirectory = pwd->pw_dir;

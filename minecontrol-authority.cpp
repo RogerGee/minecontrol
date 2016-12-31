@@ -10,10 +10,10 @@
 #include <ctype.h>
 #include <pthread.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <signal.h>
-#include <wait.h>
 #include <limits.h>
 #include <errno.h>
 using namespace rtypes;
@@ -288,7 +288,7 @@ minecontrol_authority::minecontrol_authority(const pipe& ioChannel,int fderr,con
     _childCnt = 0;
     for (int i = 0;i < ALLOWED_CHILDREN;++i)
         _childID[i] = -1;
-   _threadID = -1;
+    _trun = true;
     _consoleEnabled = true;
     _threadCondition = true;
     // start default programs from _serverDirectory/AUTHORITY_EXEC_FILE
@@ -323,8 +323,9 @@ minecontrol_authority::~minecontrol_authority()
 {
     // join back up with the processing thread
     _threadCondition = false;
-    if (int(_threadID)!=-1 && pthread_join(_threadID,NULL) != 0)
+    if (_trun && pthread_join(_threadID,NULL) != 0)
         throw minecontrol_authority_error();
+    _trun = false;
 }
 minecontrol_authority::console_result minecontrol_authority::client_console_operation(socket& clientChannel)
 {
@@ -442,8 +443,16 @@ minecontrol_authority::execute_result minecontrol_authority::run_auth_process(st
         if ( !_prepareArgs(&commandLine[0],&program,argv,ARGV_BUF_SIZE) )
             _exit((int)authority_exec_too_many_arguments);
         // change permissions for this process
+#ifdef __APPLE__
+        if (setgid(_login.gid) == -1 || setegid(_login.gid) == -1
+            || setuid(_login.uid) == -1 || seteuid(_login.uid) == -1)
+        {
+            _exit((int)authority_exec_attr_fail);
+        }
+#else
         if (setresgid(_login.gid,_login.gid,_login.gid)==-1 || setresuid(_login.uid,_login.uid,_login.uid)==-1)
             _exit((int)authority_exec_attr_fail);
+#endif
         // duplicate open pipe end as stdin
         _childStdIn[index].standard_duplicate();
         // duplicate Minecraft server process's stdin as stdout, then
@@ -476,7 +485,7 @@ minecontrol_authority::execute_result minecontrol_authority::run_auth_process(st
         if (chdir(_serverDirectory.c_str()) == -1)
             _exit((int)authority_exec_cannot_run);
         // attempt to execute program
-        if (execvpe(program,(char* const*)argv,environ) == -1) {
+        if (execvp(program,(char* const*)argv) == -1) {
             if (errno == ENOENT)
                 _exit((int)authority_exec_program_not_found);
             if (errno == ENOEXEC)
@@ -562,18 +571,22 @@ void minecontrol_authority::get_auth_processes(dynamic_array<int32>& pidlist) co
 }
 bool minecontrol_authority::is_responsive() const
 {
+#ifdef __APPLE__
+    return true;
+#else
     // the processing thread is joinable, therefore try
     // to join with it; it would have terminated if the Minecontrol
     // process had become unresponsive
-    if (int(_threadID) != -1) {
+    if (_trun) {
         void* junk;
         if (pthread_tryjoin_np(_threadID,&junk) == 0) {
-            _threadID = -1;
+            _trun = false;
             return false;
         }
         return true;
     }
     return false;
+#endif
 }
 void* minecontrol_authority::processing(void* pparam)
 {

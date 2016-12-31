@@ -12,6 +12,8 @@ Debian Package Version Log
 1.2
 1.2.1
 1.2.2
+1.2.3
+1.2.4
 
 [minecontrol]
 1.0
@@ -19,3 +21,4 @@ Debian Package Version Log
 
 [minecontrol-auth]
 1.0
+1.0.1

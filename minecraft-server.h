@@ -186,7 +186,7 @@ namespace minecraft_controller
         // per server attributes
         rtypes::str _internalName;
         rtypes::uint32 _internalID;
-        rtypes::ulong _threadID;
+        pthread_t _threadID;
         rtypes::int32 _processID;
         pipe _iochannel;
         minecontrol_authority* _authority;
@@ -270,7 +270,7 @@ namespace minecraft_controller
     private:
         static mutex _mutex;
         static rtypes::dynamic_array<server_handle*> _handles;
-        static rtypes::ulong _threadID;
+        static pthread_t _threadID;
         static volatile bool _threadCondition;
 
         static void* _manager_thread(void*);

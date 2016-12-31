@@ -12,6 +12,7 @@
 #include <pwd.h>
 #include <time.h>
 #include <errno.h>
+#include <string.h>
 #include <rlibrary/rfilename.h>
 #include <rlibrary/rutility.h>
 #include <rlibrary/rfile.h>
@@ -255,7 +256,7 @@ minecraft_server::minecraft_server()
     }
     // initialize per process attributes
     _internalID = 0;
-    _threadID = -1;
+    //_threadID = 0;
     _processID = -1;
     _authority = NULL;
     _threadCondition = false;
@@ -333,8 +334,16 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
             _exit((int)mcraft_start_server_too_many_servers);
         // setup the environment for the minecraft server:
         // change process privilages
+#ifdef __APPLE__
+        if (::setgid(info.userInfo.gid) == -1 || ::setegid(info.userInfo.gid) == -1
+            || ::setuid(info.userInfo.uid) == -1 || ::seteuid(info.userInfo.uid) == -1)
+        {
+            _exit((int)mcraft_start_server_permissions_fail);
+        }
+#else
         if (::setresgid(info.userInfo.gid,info.userInfo.gid,info.userInfo.gid)==-1 || ::setresuid(info.userInfo.uid,info.userInfo.uid,info.userInfo.uid)==-1)
             _exit((int)mcraft_start_server_permissions_fail);
+#endif
         // change the process umask
         ::umask(S_IWGRP | S_IWOTH);
         // change working directory to the directory for minecraft server
@@ -367,8 +376,8 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         duplicate_error_file(); // setup stderr
         // close all file descriptors not needed by the
         // child process; note that this is safe since
-	// the fork closed any other threads running
-	// servers off these file descriptors
+        // the fork closed any other threads running
+        // servers off these file descriptors
         int maxfd;
         maxfd = sysconf(_SC_OPEN_MAX);
         if (maxfd == -1)
@@ -511,7 +520,7 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
         }
         /* we must wait until the authority has finished using the error file descriptor */
         _close_error_file(_internalName);
-        _threadID = -1;
+        //_threadID = -1;
         _threadExit = mcraft_noexit;
         _maxTime = 0;
         _elapsed = 0;
@@ -662,13 +671,17 @@ void minecraft_server::_setup_error_file(const str& name)
     tm tmval;
     stringstream ss("BEGIN error log ");
     time(&t);
-    strftime(buf,40,"%a %b %d %H:%M:%S",localtime_r(&t,&tmval));
+    strftime(buf,40,"%a %b %d %Y %H:%M:%S",localtime_r(&t,&tmval));
     ss << '[' << buf << "] ";
     ss << name;
     for (size_type i = ss.get_device().length();i<80;++i)
         ss.put('-');
     ss << newline;
-    (void)write(_fderr,ss.get_device().c_str(),ss.get_device().length());
+    ssize_t r = write(_fderr,ss.get_device().c_str(),ss.get_device().length());
+    if (r == -1) {
+        minecontrold::standardLog << "error writing to server log file (fd="
+                                  << _fderr << "): " << strerror(errno) << endline;
+    }
 }
 void minecraft_server::_close_error_file(const str& name)
 {
@@ -679,7 +692,7 @@ void minecraft_server::_close_error_file(const str& name)
         time_t t;
         tm tmval;
         time(&t);
-        strftime(buf,40,"%a %b %d %H:%M:%S",localtime_r(&t,&tmval));
+        strftime(buf,40,"%a %b %d %Y %H:%M:%S",localtime_r(&t,&tmval));
         part += " [";
         part += buf;
         part += "] error log END";
@@ -690,7 +703,11 @@ void minecraft_server::_close_error_file(const str& name)
         }
         s += part;
         s.push_back('\n');
-        write(_fderr,s.c_str(),s.length());
+        ssize_t r = write(_fderr,s.c_str(),s.length());
+        if (r == -1) {
+            minecontrold::standardLog << "error writing to server log file (fd="
+                                      << _fderr << "): " << strerror(errno) << endline;
+        }
         close(_fderr);
         _fderr = -1;
     }
@@ -756,7 +773,7 @@ server_handle::server_handle()
 // minecraft_controller::minecraft_server_manager
 /*static*/ mutex minecraft_server_manager::_mutex;
 /*static*/ dynamic_array<server_handle*> minecraft_server_manager::_handles;
-/*static*/ pthread_t minecraft_server_manager::_threadID = -1;
+/*static*/ pthread_t minecraft_server_manager::_threadID;
 /*static*/ volatile bool minecraft_server_manager::_threadCondition = false;
 /*static*/ server_handle* minecraft_server_manager::allocate_server()
 {

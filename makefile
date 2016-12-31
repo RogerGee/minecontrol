@@ -1,7 +1,7 @@
 ####################################################################################################
 #  Makefile for project `minecraft-controller'; includes server and client programs                #
 ####################################################################################################
-.PHONY: debug clean install uninstall
+.PHONY: debug clean install uninstall apple
 
 # programs and options
 PROGRAM_NAME_SERVER = minecontrold
@@ -10,7 +10,11 @@ PROGRAM_NAME_CLIENT = minecontrol
 PROGRAM_NAME_CLIENT_DEBUG = minecontrol-debug
 OBJECT_DIRECTORY_NAME = obj/
 OBJECT_DIRECTORY_NAME_DEBUG = dobj/
+ifeq ($(MAKECMDGOALS),apple)
+LIBRARY_SERVER = -lrlibrary -pthread -lcrypto
+else
 LIBRARY_SERVER = -lrlibrary -pthread -lcrypt -lcrypto
+endif
 LIBRARY_CLIENT = -lrlibrary -pthread -lcrypto -lncurses
 OUT = -o 
 
@@ -55,6 +59,10 @@ all: $(OBJECT_DIRECTORY) $(PROGRAM_SERVER) $(PROGRAM_CLIENT)
 	make -C auth
 debug: $(OBJECT_DIRECTORY) $(PROGRAM_SERVER) $(PROGRAM_CLIENT)
 	make -C auth debug
+
+# NOTE: we cannot exactly build the minecontrol api library since it relies on
+# some GNU/Linux features.
+apple: $(OBJECT_DIRECTORY) $(PROGRAM_SERVER) $(PROGRAM_CLIENT)
 
 $(PROGRAM_SERVER): $(OBJECTS_SERVER)
 	$(LINK) $(OUT)$(PROGRAM_SERVER) $(OBJECTS_SERVER) $(LIBRARY_SERVER)
@@ -112,8 +120,8 @@ clean:
 	make -C auth clean
 
 install:
-	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp $(PROGRAM_NAME_SERVER) /usr/local/bin; chmod go-rwx /usr/bin/$(PROGRAM_NAME_SERVER); fi;
-	if [ -f $(PROGRAM_NAME_CLIENT) ]; then cp $(PROGRAM_NAME_CLIENT) /usr/local/bin; fi;
+	if [ -f $(PROGRAM_NAME_SERVER) ]; then cp -v $(PROGRAM_NAME_SERVER) /usr/local/bin; chmod go-rwx /usr/local/bin/$(PROGRAM_NAME_SERVER); fi;
+	if [ -f $(PROGRAM_NAME_CLIENT) ]; then cp -v $(PROGRAM_NAME_CLIENT) /usr/local/bin; fi;
 	make -C auth install
 
 uninstall:

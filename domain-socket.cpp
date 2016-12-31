@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <errno.h>
+#include <string.h>
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -33,7 +34,12 @@ void domain_socket_address::_assignAddress(const char* address,const char*/*igno
     if (address[0] == '@') {
         // use abstract domain-socket namespace
         // (buffer->sun_path is already zero-filled)
+#ifdef __APPLE__
+        j = 5; // OS X does not have abstract domain socket namespace
+        strcpy(buffer->sun_path,"/tmp/");
+#else
         j = 1;
+#endif
         ++address;
     }
     else
