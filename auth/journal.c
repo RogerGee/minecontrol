@@ -474,9 +474,10 @@ void book_callback(struct tree_key* key)
 {
     coord* record;
     record = (coord*)key->payload;
-    if (book_callback_state%13 == 0)
-        printf("]}\",\"{\"text\":'',\"extra\":[{\"text\":''}");
-    printf(",{\"text\":'%s\\n',\"clickEvent\":{\"action\":run_command,\"value\":'/tp %s %d %d %d'}}",
+    if (book_callback_state%13 == 0) {
+        printf("]}\",\"{text:'',extra:[{text:''}");
+    }
+    printf(",{text:'%s\\n',clickEvent:{action:'run_command',value:'/tp %s %d %d %d'}}",
         key->key,book_callback_player,record->coord_x,record->coord_y,record->coord_z);
     ++book_callback_state;
 }
@@ -792,7 +793,7 @@ int track_book(int kind,const char* message,const callback_parameter* params)
     /* the book title must not exceed 16 characters; */
     strncpy(title,nspace,sizeof(title)-1);
     /* write the start of the message; thanks to Ethan Rutherford for developing this command string */
-    printf("give %s written_book 1 0 {\"author\":\"%s\",\"title\":\"%s\",\"pages\":[\"{\"text\":'',\"extra\":[{\"text\":'This is a magic book of warps.'}",
+    printf("give %s written_book 1 0 {author:\"%s\",title:\"%s\",pages:[\"{text:'',extra:[{text:'This is a magic book of warps.'}",
         params->s_tokens[0],params->s_tokens[0],title);
     book_callback_state = 0;
     book_callback_player = params->s_tokens[0];
