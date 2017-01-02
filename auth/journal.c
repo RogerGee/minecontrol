@@ -642,6 +642,9 @@ int track_main(int kind,const char* message)
 }
 int track_help(int kind,const char* message,const callback_parameter* params)
 {
+    /* Issue core command help (i.e. commands that have the form journal NAME
+     * LABEL).
+     */
     issue_command_str("tellraw %s {\"text\":\"journal \",\"color\":\"white\",\
 \"extra\":[{\"text\":\"add\",\"color\":\"gray\"},{\"text\":\" | \",\"color\":\"white\"}, \
 {\"text\":\"tell\",\"color\":\"gray\"},{\"text\":\" | \",\"color\":\"white\"},\
@@ -650,9 +653,17 @@ int track_help(int kind,const char* message,const callback_parameter* params)
 {\"text\":\"tp\",\"color\":\"gray\"},{\"text\":\" | \",\"color\":\"white\"},\
 {\"text\":\"ls \",\"color\":\"gray\"},{\"text\":\"[label]\",\"color\":\"blue\",\"underlined\":\"true\"}\
 ]}",params->s_tokens[0]);
+
+    /* Issue help for journal diff. */
     issue_command_str("tellraw %s {\"text\":\"journal \",\"color\":\"white\",\
 \"extra\":[{\"text\":\"diff \",\"color\":\"gray\"},{\"text\":\"[label]\",\"color\":\"blue\",\"underlined\":\"true\"},\
 {\"text\":\" \"},{\"text\":\"[label]\",\"color\":\"blue\",\"underlined\":\"true\"}]}",params->s_tokens[0]);
+
+    /* Issue help for journal book (if enabled). */
+    if (journal_allow_book) {
+        issue_command_str("tellraw %s {\"text\":\"journal \",\"color\":\"white\",\
+\"extra\":[{\"text\":\"book \",\"color\":\"gray\"}]}",params->s_tokens[0]);
+    }
     return 0;
 }
 int track_tell(int kind,const char* message,const callback_parameter* params)
