@@ -1,4 +1,0 @@
-#!/bin/sh
-# prerm - removal script for minecontrold package
-
-update-rc.d -f minecontrold remove
