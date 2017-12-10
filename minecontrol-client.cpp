@@ -295,7 +295,7 @@ bool controller_client::command_login(rstream& kstream,rstream& vstream) // hand
     const char* pencrypt;
     shadowPwd = getspnam( username.c_str() );
     if (shadowPwd==NULL && errno==EACCES) {
-        prepare_error() << "This server cannot log you in because it is not priviledged; this is most likely a mistake; contact your SA" << flush;
+        prepare_error() << "This server cannot log you in because it is not privileged; this is most likely a mistake; contact your SA" << flush;
         connection << msgbuf.get_message();
         minecontrold::standardLog << "!!warning!!: server doesn't have permission to authenticate user; is this process priviledged?" << endline;
         return false;

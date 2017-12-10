@@ -19,6 +19,12 @@
 using namespace rtypes;
 using namespace minecraft_controller;
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#else
+#define PACKAGE_VERSION "(unknown version)"
+#endif
+
 // constants
 static const char* const INIT_DIR = "/etc/minecontrold";
 static const char* const LOG_FILE = "minecontrol.log"; // relative to current working directory of the server process
@@ -243,7 +249,7 @@ void minecraft_controller_log_stream::_outDevice()
 // minecraft-controller::minecontrold
 /*static*/ minecraft_controller_log_stream minecontrold::standardLog;
 /*static*/ const char* minecontrold::SERVER_NAME = "minecontrold";
-/*static*/ const char* minecontrold::SERVER_VERSION = "1.2.4";
+/*static*/ const char* minecontrold::SERVER_VERSION = PACKAGE_VERSION;
 void minecontrold::shutdown_minecontrold()
 {
     minecontrold::standardLog << "the server is going down; an internal request was issued" << endline;

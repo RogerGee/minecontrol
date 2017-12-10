@@ -1,150 +1,180 @@
-minecontrol
+minecontrol - v1.2.3
 --------------------------------------------------------------------------------
 A. Overview
 
-"minecontrol" is an application that manages Minecraft (TM) server processes on
-Linux systems. minecontrol provides a server daemon that implements a simple
-text-based protocol for Minecraft server management. The purpose of the project
-was to provide a simple and automated way to administer Minecraft servers on
-Linux systems, while maintaining flexiblity and customization.
+Minecontrol is an application that manages and extends Minecraft servers on
+GNU/Linux systems. Minecontrol provides a server daemon that implements a simple
+text-based protocol that allows for remote administration. The purpose of this
+project was to provide a simple and automated way to administer Minecraft
+servers on GNULinux systems, while allowing for wrapping of server commands and
+providing a mechanism for extending server functionality.
 
-minecontrol provides a user-oriented approach to basic server administration,
-meaning that a system user must authenticate themselves before a server process
-can be started. Server processes are run with the permissions (UID) of the
-authenticated user, and server data is stored in the ~/minecraft directory in
-the user's home directory. Using different network service ports, minecontrol
-can host servers run by a variety of users simultaneously. The minecontrol
-server can limit the total number of server processes that it manages, and a
-root user may stop any server at any time (as well as shutdown the minecontrol
-server remotely). A user logs in to the minecontrol server using a minecontrol
-client. This repository contains a standard command-line interface client
-implementation for Linux systems. The user must then authenticate themselves
-using their system password. Minecontrol clients encrypt this field using the
-OpenSSL Crypto library. Once logged in, a user can issue commands provided by
-the minecontrol protocol to start, stop, list, and perform other operations
-on Minecraft server processes.
+Minecontrol provides a user-oriented approach to Minecraft server
+management. This means servers are organized by the system user account that
+creates servers. Every system user (with a valid UNIX login) may sign into the
+Minecontrol server. Servers created by users are saved in the user's home
+directory under "minecraft". When a server process is executed, its UID is set
+to the respective user, and the user's local minecraft directory is added to the
+authority search paths before system directories. Of course, only one Minecraft
+server at a time can use a particular TCP/IP port; so users running simultaneous
+servers must do so on different ports.
 
-Each server is identified by a unique name that corresponds to the top-level
-directory in ~/minecraft that contains the server data files. The minecontrol
-server provides users with an interface to specify Minecraft server properties
-when a server is started, either initially or upon successive start-ups. The
-minecontrol server will overwrite the server.properties file with changed
-properties (if any) each time a server process is spawned. This is useful 
-especially for changing the network service port to which the server should
-bind.
+A user logs in to the minecontrol server using a Minecontrol client software
+program. This repository contains a standard command-line interface client
+implementation for GNU/Linux systems. Once connected to the server, the client
+must then authenticate themselves using the system password of the desired
+user. Minecontrol clients encrypt this field using the OpenSSL Crypto
+library. Once logged in, a user can issue commands provided by the minecontrol
+protocol to start, stop, list, and perform other operations on Minecraft server
+processes.
 
-Once a server is started, the minecontrol server can time the process and
-send the server the "stop" command when the time has expired. Optionally a
-server may be set to unlimited time, in which case a user must manually stop
-the server. minecontrol always attempts to cleanly shutdown the Minecraft
-server by sending it the "stop" command. If the server process is not
-responding after a pre-configured timeout, a SIGKILL is sent to the process.
-A user may also extend the running time for a server via the EXTEND protocol
-command.
+The root user is allowed to administer any running Minecraft servers, and they
+can shutdown the Minecontrol server as well remotely. Root users should not
 
-The minecontrol server loads its own settings from the
+Minecraft servers are identified by unique names that correspond to the
+top-level directory in users' "minecraft" directories that contain the server
+data files. When a server is created/restarted, the client may specify Minecraft
+server properties. The Minecontrol server will overwrite the server.properties
+file with changed properties (if any) each time a server process is
+spawned. This is useful especially for changing the network service port to
+which the server should bind or the message of the day.
+
+Once a server is started, the Minecontrol server can time the process and send
+the server the "stop" command when the time has expired. Optionally a server may
+be set to unlimited time, in which case a client must manually stop the
+server. Minecontrol always attempts to cleanly shutdown the Minecraft server by
+sending it the "stop" command. If the server process is not responding after a
+pre-configured timeout, a SIGKILL is sent to the process.  A client may also
+extend the running time for a server via the EXTEND protocol command.
+
+The Minecontrol server loads its own settings from the
 /etc/minecontrold/minecontrol.init file. This file provides settings that the
-minecontrol server loads each time it starts a new Minecraft server. These
-settings include options such as the command-line used to spawn the Java
-Minecraft process, maximum allowed servers at a time, default timeout for 
-server processes, default server.properties settings to apply or override,
-ETC. This file may be modified at any point while a minecontrol server is
-running as the server reads the file when it begins a new Minecraft server
-process.
+Minecontrol server loads each time it starts a new Minecraft server. These
+settings include options such as the command-line used to invoke the Java JVM,
+maximum allowed servers at a time, default timeout for server processes, default
+server.properties settings to apply or override, ETC. This file may be modified
+at any point while a minecontrol server is running as the server reads the file
+each time it begins a new Minecraft server process.
 
-Perhaps one of the more unique and interesting attributes of minecontrol is
-its so-called "authority" functionality. Every Minecraft server process logs
-messages to its stdout. These messages are identical to those found in the
-server's log files. minecontrol exploits this behavior and intercepts log
-messages. Acting as an authoritative server, the minecontrol server issues
-simplified versions of these log messages to one or more "authority
-programs". These authority programs receive messages from the minecontrol
-server and can send commands to the Minecraft server. Each authority program
-receives a copy of the log message (hence the term "authoritative"). Authority
-programs can extend the functionality of a Minecraft server. For example,
-this repository includes standard authority programs, one of which provides
-in-game location journaling. Users may write their own authority programs
-to extend the functionality of their Minecraft worlds. The minecontrol
-protocol provides commands for starting and stopping authority programs,
-and each server may include a minecontrol.exec file for specifying default
-authority programs to run for a server. This repository includes a C API for
-writing authority programs; authority programs are also effectively 
-written using scripting languages like Python; in fact any programming language
-is probably well suited to writing authority programs to extend a Minecraft
-server (some certainly better than others).
+Finally, the Minecontrol server provides a feature for extending the
+functionality of Minecraft worlds by wrapping the server console. This component
+is called the Minecontrol Authority. See the section on the Minecontrol
+Authority for more information.
+
 --------------------------------------------------------------------------------
 B. Building
 
-minecontrol was built for Linux systems under POSIX. You will need a C and C++
-compiler to build this project. You will also need several external library
-development files. The project makefile should be the simplest way to build this
-project. Not accounting for compiler version differences (I used GCC 4.6.3 on
-Ubuntu), the project should build with no errors or warnings.
+Minecontrol was built for GNU/Linux systems. You will need a C++ compiler with
+at least C++11 support to build this project. You will also need several
+external library dependencies. The configure scripts will make sure the
+dependencies are installed properly on your system. To generate the scripts, run
+"buildconf.sh".
 
-Dependencies:
-        [server]
-        libssl-dev
-        rlibrary
+Now you should be able to configure and build in the normal way:
 
-        [client]
-        libncurses-dev
-        rlibrary
+    $ ./configure
+    $ make
 
-The rlibrary dependency is a library project of mine.
+The following dependencies are required to build:
 
-For Debian distributions:
+    OpenSSL
+    ncurses
+    rlibrary (see https://git.rserver.us/support/rlibrary.git)
 
-For pre-built Debian binary packages I provide a package repository. Add the
-following to your /etc/apt/sources.list file:
-    deb ftp://rserver.us/ stable main
-
-Now you can run:
-    $ apt-get update && apt-get install minecontrold
-You might also need the client CLI tool:
-    $ apt-get install minecontrol
-
-Note that I do not guarantee the availability of the above site. If you would 
-rather pull the package down directly here are the URLs for the i386 and amd64
-builds respectively:
- [i386]
- ftp://rserver.us/dists/stable/main/binary-i386/minecontrold_1.2.1_i386.deb
- ftp://rserver.us/dists/stable/main/binary-i386/minecontrol_1.0_i386.deb
- ftp://rserver.us/dists/stable/main/binary-i386/libminecontrol-api1_1.0_i386.deb
-
- [amd64]
- ftp://rserver.us/dists/stable/main/binary-amd64/minecontrold_1.2.1_amd64.deb
- ftp://rserver.us/dists/stable/main/binary-amd64/minecontrol_1.0_amd64.deb
- ftp://rserver.us/dists/stable/main/binary-amd64/libminecontrol-api1_1.0_amd64.deb
-
-All of these three packages are required to have a fully functioning standard 
-installation. Again, I do not support or guarantee the availability of these
-packages.
 --------------------------------------------------------------------------------
-C. Installation
+C. Installation and usage
 
-If you use a Debian Linux distribution, building the .deb packages is the best
-way to go. Included in the repository are several shell scripts that should
-do this. Else the makefile has a local install rule. This will not install the
-default /etc/minecontrold/minecontrol.init file that is included with the
-repository.
+To install the software, run "make install" in the usual way. This will install
+"minecontrol" to <PREFIX>/bin and "minecontrold" to <PREFIX>/sbin.
 
-The Debian packages will install an init.d script that will launch the
-minecontrol daemon at boot-time. This also allows minecontrol to be managed
-as a system service like so:
-   $ service minecontrold start
-   $ service minecontrold stop
-The packages also provide several MAN pages that contain useful information on
-the daemon, client tool and config files.
+When running "minecontrold" (i.e. the server program), you must run it as root
+so that it can verify user passwords. It will attempt to load the
+/etc/minecontrold/minecontrol.init file unless the software was built with
+MINECONTROL_TEST in which case the current directory is searched for
+minecontrol.init.
+
+A server listens on a local domain socket as well as a TCP/IP socket. Use the
+"minecontrol" client program to connect. Without arguments, it attempts to
+connect locally via the UNIX domain socket.
+
 --------------------------------------------------------------------------------
-D. Desiderata
+D. The Minecontrol Authority
 
- Copyright 2014 Roger Gee.  License GPLv3+: GNU GPL version 3 or later;
+Minecontrol provides a component for extending the functionality of Minecraft
+servers called the Minecontrol Authority. The Authority is a wrapper for the
+Minecraft server console. It allows you to script commands that can process
+input from the server logs. This process takes advantage of the fact that a
+Minecraft server process logs messages not just to disk but to its standard
+output.
+
+Here's how the authority works: Minecontrol creates a pipe for the Minecraft
+server's stdout. The Authority reads the log messages, parses them and
+simplifies them to a common format. Then the Authority issues a copy
+(authoritatively) to a set of satellite processes called "authority
+programs". Each running authority program shares a connection to the Minecraft
+server's stdin, and it can use this pipe to write commands to the server
+console.
+
+    -------------
+    | Minecraft | -> "[17:28:53] [Server thread/INFO]: <DatFrogKing> Hello, World!"
+    -------------                          |
+          ^                                |
+          |                                V
+     "kill DatFrogKing"
+          |                         ---------------
+          |                         | Minecontrol |
+          |                         ---------------
+     "say Hi, DatFrogKing"                 |
+          |                                |
+          |                                | 
+          |                  "chat DatFrogKing Hello, World!"
+          |                      |         |            |
+          |                      |         |            |
+          |                      |         |            |
+          |                      V         V            V
+          |                    ------   ------        ------
+          ^<-------------------| p1 |---| p2 |--------| p3 |
+                               ------   ------        ------
+
+A Minecontrol client can execute any number of authority programs using the
+protocol. Since all programs share the same output device (i.e. a pipe), they
+must perform commands using atomic write operations that do not exceed the
+kernel buffer size for atomic pipe write operations.
+
+You can write your own authority programs using the language of your
+choice. Note that authority programs run in a constrained environment. The
+search path for authority programs is "/usr/lib/minecontrol",
+"/usr/local/lib/minecontrol" and "~/minecraft". Programs must be encapsulated
+inside a single executable file. If your program requires an interpreter,
+include a shebang on the first line. Note that the PATH is set to the authority
+search paths: no standard system paths are available so use an absolute
+invocation of the interpreter program. For example:
+
+    #!/usr/local/my-custom-builds/python2.7.10/bin/python
+    from sys import stdout
+    stdout.write("say It works!\n")
+    stdout.flush()
+
+When an authority program is launched, its working directory is set to the
+subdirectory of "~/minecraft" that contains the Minecraft server's data
+files. Standard error is routed to an "errors" file used by Minecontrol for
+logging. An authority program can create files in this space but should avoid
+overwriting files used by the Minecraft server.
+
+Several repositories exist that contain useful/fun authority programs:
+
+    https://git.rserver.us/minecontrol/auth-progs
+    https://git.rserver.us/minecontrol/journal
+
+--------------------------------------------------------------------------------
+E. Desiderata
+
+Copyright 2014-2017 Roger Gee.  License GPLv3+: GNU GPL version 3 or later;
   consult <http://gnu.org/licenses/gpl.html>.
- Minecontrol is free software: you are free to change and redistribute it.
- There is NO WARRANTY and NO SUPPORT to the extent permitted by law.
+Minecontrol is free software: you are free to change and redistribute it.
+There is NO WARRANTY and NO SUPPORT to the extent permitted by law.
 
 I welcome bug reports to "Roger Gee" <rpg11a@acu.edu>.
 
 Please respect the Minecraft EULA found here:
  https://account.mojang.com/documents/minecraft_eula
-Be honest and buy legitimate copies of the Minecraft software.

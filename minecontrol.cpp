@@ -15,12 +15,18 @@
 using namespace rtypes;
 using namespace minecraft_controller;
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#else
+#define PACKAGE_VERSION "(unknown version)"
+#endif
+
 // constants (well, some are mutable but they function like constants)
 static const char* DOMAIN_NAME = "@minecontrol";
 static const char* SERVICE_PORT = "44446";
 static const char* PROGRAM_NAME;
 static const char* const CLIENT_NAME = "minecontrol-standard";
-static const char* const PROGRAM_VERSION = "1.1";
+static const char* const PROGRAM_VERSION = PACKAGE_VERSION;
 static const char PROMPT_MAIN = '#';
 static const char PROMPT_CONSOLE = '$';
 
