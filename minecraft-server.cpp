@@ -22,9 +22,10 @@ using namespace minecraft_controller;
 // globals
 extern char **environ;
 static const char* const SERVER_INIT_FILE = "minecontrol.init"; // relative to current working directory (this is a global server init file)
-static const char* const MINECRAFT_USER_DIRECTORY = "minecraft";
 
 // minecraft_controller::minecraft_server_info
+
+/* static */ const char* const minecraft_server_info::MINECRAFT_USER_DIRECTORY = "minecraft";
 
 minecraft_server_info::minecraft_server_info(bool createNew,const char* serverName,const user_info& userInformation)
     : isNew(createNew), internalName(serverName), userInfo(userInformation)
@@ -303,7 +304,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     // compute the server working directory (as a subdirectory of the home directory and the minecraft
     // user directory); create the directory (and its parent directories where able) and change its owner
     // to the authenticated user
-    mcraftdir += MINECRAFT_USER_DIRECTORY;
+    mcraftdir += minecraft_server_info::MINECRAFT_USER_DIRECTORY;
     if ( !mcraftdir.exists() ) {
         if (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1
             || chmod(mcraftdir.get_full_name().c_str(),S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP)==-1)

@@ -44,6 +44,10 @@ namespace minecraft_controller
 
         const minecraft_server_property_list& get_props() const
         { return _properties; }
+
+        // Define the name of the subdirectory under which we store a user's
+        // minecraft servers. This is a subdirectory of the user home directory.
+        static const char* const MINECRAFT_USER_DIRECTORY;
     private:
         enum _prop_process_flag
         {
@@ -278,3 +282,11 @@ namespace minecraft_controller
 }
 
 #endif
+
+/*
+ * Local Variables:
+ * mode:c++
+ * indent-tabs-mode:nil
+ * tab-width:4
+ * End:
+ */

@@ -99,6 +99,7 @@ static void logout(session_state& session);
 static void start(session_state& session);
 static void extend(session_state& session);
 static void exec(session_state& session);
+static void auth_ls(session_state& session);
 static void console(session_state& session);
 static void stop(session_state& session);
 static void any_command(const generic_string& command,session_state& session); // these commands do not provide an interactive mode
@@ -191,6 +192,8 @@ int main(int argc,const char* argv[])
             extend(session);
         else if (command == "exec")
             exec(session);
+        else if (command == "auth-ls")
+            auth_ls(session);
         else if (command == "console")
             console(session);
         else if (command == "stop")
@@ -550,6 +553,20 @@ void exec(session_state& session)
     session.request.enqueue_field_name("ServerID");
     session.request.enqueue_field_name("Command");
     session.request << tokA << newline << tokB << flush;
+    request_response_sequence(session);
+}
+
+void auth_ls(session_state& session)
+{
+    str filter;
+
+    session.inputStream >> filter;
+    session.request.begin("AUTH-LS");
+    if (filter.length() != 0) {
+        session.request.enqueue_field_name("Filter");
+        session.request << filter << newline << flush;
+    }
+
     request_response_sequence(session);
 }
 

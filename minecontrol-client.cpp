@@ -16,7 +16,7 @@ using namespace minecraft_controller;
 /*static*/ mutex controller_client::clientsMutex;
 /*static*/ dynamic_array<void*> controller_client::clients;
 /*static*/ size_type controller_client::CMD_COUNT_WITHOUT_LOGIN = 2;
-/*static*/ size_type controller_client::CMD_COUNT_WITH_LOGIN = 6;
+/*static*/ size_type controller_client::CMD_COUNT_WITH_LOGIN = 7;
 /*static*/ size_type controller_client::CMD_COUNT_WITH_PRIVILEGED_LOGIN = 1;
 /*static*/ const char* const controller_client::CMDNAME_WITHOUT_LOGIN[] =
 {
@@ -30,13 +30,15 @@ using namespace minecraft_controller;
 {
     "start", "stop",
     "logout", "console",
-    "extend", "exec"
+    "extend", "exec",
+    "auth-ls"
 };
 /*static*/ const controller_client::command_call controller_client::CMDFUNC_WITH_LOGIN[] =
 {
     &controller_client::command_start, &controller_client::command_stop,
     &controller_client::command_logout, &controller_client::command_console,
-    &controller_client::command_extend, &controller_client::command_exec
+    &controller_client::command_extend, &controller_client::command_exec,
+    &controller_client::command_auth_ls
 };
 /*static*/ const char* const controller_client::CMDNAME_WITH_PRIVILEGED_LOGIN[] =
 {
@@ -46,6 +48,7 @@ using namespace minecraft_controller;
 {
     &controller_client::command_shutdown
 };
+
 /*static*/ controller_client* controller_client::accept_client(socket& ds)
 {
     str addr;
@@ -81,6 +84,7 @@ using namespace minecraft_controller;
     // the accept failed
     return NULL;
 }
+
 /*static*/ void controller_client::shutdown_clients()
 {
     clientsMutex.lock();
@@ -96,6 +100,7 @@ using namespace minecraft_controller;
     }
     clientsMutex.unlock();
 }
+
 /*static*/ void controller_client::close_client_sockets()
 {
     // I assume that this is called from a single-threaded forked context
@@ -104,6 +109,7 @@ using namespace minecraft_controller;
 	if (clients[i] != NULL)
 	    reinterpret_cast<controller_client*>(clients[i])->sock->close();
 }
+
 controller_client::controller_client(socket* acceptedSocket)
 {
     if (acceptedSocket == NULL)
@@ -113,6 +119,7 @@ controller_client::controller_client(socket* acceptedSocket)
     threadCondition = true;
     referenceIndex = 0;
 }
+
 controller_client::~controller_client()
 {
     // this object's socket was dynamically allocated
@@ -120,6 +127,7 @@ controller_client::~controller_client()
     if (sock != NULL)
         delete sock;
 }
+
 /*static*/ void* controller_client::client_thread(void* pclient)
 {
     controller_client* client = reinterpret_cast<controller_client*>(pclient);
@@ -140,6 +148,7 @@ controller_client::~controller_client()
     delete client;
     return NULL;
 }
+
 bool controller_client::message_loop()
 {
     str clientName, clientVersion;
@@ -243,6 +252,7 @@ bool controller_client::message_loop()
     }
     return false;
 }
+
 bool controller_client::command_login(rstream& kstream,rstream& vstream) // handles 'login' requests
 {
     if (userInfo.uid >= 0) {
@@ -319,6 +329,7 @@ bool controller_client::command_login(rstream& kstream,rstream& vstream) // hand
     client_log(minecontrold::standardLog) << "client authenticated successfully as '" << username << '\'' << endline;
     return true;
 }
+
 bool controller_client::command_logout(rstream&,rstream&)
 {
     userInfo.uid = -1;
@@ -329,6 +340,7 @@ bool controller_client::command_logout(rstream&,rstream&)
     client_log(minecontrold::standardLog) << "client was logged-out of authentication mode" << endline;
     return true;
 }
+
 bool controller_client::command_start(rstream& kstream,rstream& vstream)
 {
     str key;
@@ -374,6 +386,7 @@ bool controller_client::command_start(rstream& kstream,rstream& vstream)
     minecraft_server_manager::attach_server(handle);
     return true;
 }
+
 bool controller_client::command_status(rstream&,rstream&)
 {
     rstream& msg = prepare_list_message();
@@ -382,6 +395,7 @@ bool controller_client::command_status(rstream&,rstream&)
     connection << msgbuf.get_message();
     return true;
 }
+
 bool controller_client::command_extend(rstream& kstream,rstream& vstream)
 {
     str key;
@@ -448,6 +462,7 @@ bool controller_client::command_extend(rstream& kstream,rstream& vstream)
     minecraft_server_manager::attach_server(&servers[0],servers.size());
     return true;
 }
+
 bool controller_client::command_exec(rstream& kstream,rstream& vstream)
 {
     str key;
@@ -527,6 +542,64 @@ bool controller_client::command_exec(rstream& kstream,rstream& vstream)
     minecraft_server_manager::attach_server(&servers[0],servers.size());
     return res==minecontrol_authority::authority_exec_okay || res==minecontrol_authority::authority_exec_okay_exited;
 }
+
+bool controller_client::command_auth_ls(rstream& kstream,rstream& vstream)
+{
+    str key;
+    str filter;
+    dynamic_array<str> programs;
+    minecontrol_authority::path_type pathType;
+
+    // Read optional filter field from protocol message.
+    while (kstream >> key) {
+        if (key == "filter") {
+            vstream >> filter;
+            if (!vstream.get_input_success()) {
+                prepare_error() << "Could not read filter value from input stream" << flush;
+                connection << msgbuf.get_message();
+                return false;
+            }
+            if (filter.length() == 0 || (filter != "user" && filter != "system")) {
+                prepare_error() << "The specified auth-list filter is incorrect" << flush;
+                connection << msgbuf.get_message();
+                return false;
+            }
+        }
+    }
+
+    if (filter == "user") {
+        pathType = minecontrol_authority::authority_user_path;
+    }
+    else if (filter == "system") {
+        pathType = minecontrol_authority::authority_system_path;
+    }
+    else {
+        pathType = minecontrol_authority::authority_any_path;
+    }
+
+    minecontrol_authority::list_authority_programs(programs,userInfo,pathType);
+
+    if (programs.size() > 0) {
+        rstream& msg = prepare_list_message();
+        for (size_type i = 0;i < programs.size();++i) {
+            msg << programs[i] << newline;
+        }
+        msg.flush_output();
+    }
+    else {
+        rstream& msg = prepare_message();
+        if (filter.length() > 0) {
+            msg << "There are no such authority programs available on the system." << flush;
+        }
+        else {
+            msg << "There are no authority programs available on the system." << flush;
+        }
+    }
+    connection << msgbuf.get_message();
+
+    return true;
+}
+
 bool controller_client::command_stop(rstream& kstream,rstream& vstream)
 {
     str key;
@@ -603,6 +676,7 @@ bool controller_client::command_stop(rstream& kstream,rstream& vstream)
     minecraft_server_manager::attach_server(&servers[0],servers.size());
     return true;
 }
+
 bool controller_client::command_console(rstream& kstream,rstream& vstream)
 {
     str key;
@@ -660,43 +734,11 @@ bool controller_client::command_console(rstream& kstream,rstream& vstream)
     }
     return res != minecontrol_authority::console_no_channel;
 }
+
 bool controller_client::command_shutdown(rstream&,rstream&)
 {
     prepare_message() << "Server '" << minecontrold::get_server_name() << "' is shutting down" << flush;
     connection << msgbuf.get_message();
     minecontrold::shutdown_minecontrold();
     return true;
-}
-inline
-rstream& controller_client::client_log(rstream& stream)
-{
-    return stream << '{' << sock->get_accept_id() << "} ";
-}
-inline
-rstream& controller_client::prepare_message()
-{
-    msgbuf.begin("MESSAGE");
-    msgbuf.enqueue_field_name("Payload");
-    return msgbuf;
-}
-inline
-rstream& controller_client::prepare_error()
-{
-    msgbuf.begin("ERROR");
-    msgbuf.enqueue_field_name("Payload");
-    return msgbuf;
-}
-inline
-rstream& controller_client::prepare_list_message()
-{
-    msgbuf.begin("LIST-MESSAGE");
-    msgbuf.repeat_field("Item");
-    return msgbuf;
-}
-inline
-rstream& controller_client::prepare_list_error()
-{
-    msgbuf.begin("LIST-ERROR");
-    msgbuf.repeat_field("Item");
-    return msgbuf;
 }

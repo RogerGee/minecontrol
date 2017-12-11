@@ -36,7 +36,7 @@
 # for an authenticated user (the one specified in the system password
 # file). If alt-home is specified, Minecraft servers are created in
 # directories that are sub-directories of alt-home/user-name/minecraft/
-# as opposed to user-home-dir/minecraft/. Though not requires, alt-home
+# as opposed to user-home-dir/minecraft/. Though not required, alt-home
 # should preferably be an absolute path.
 #alt-home=/minecraft-servers
 

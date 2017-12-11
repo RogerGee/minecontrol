@@ -135,6 +135,13 @@ namespace minecraft_controller
             authority_exec_not_ready, // the authority object is not ready to run executable programs at this time (most likely the Minecraft server shutdown)
             authority_exec_unspecified // the failure reason is undocumented
         };
+        enum path_type
+        {
+            authority_system_path,
+            authority_user_path,
+            authority_any_path
+        };
+
 
         minecontrol_authority(const pipe& ioChannel,int fderr,const rtypes::str& serverDirectory,const user_info& login);
         ~minecontrol_authority();
@@ -148,9 +155,13 @@ namespace minecraft_controller
 
         bool is_responsive() const; // determine if server process is still responsive
 
+        static void list_authority_programs(rtypes::dynamic_array<rtypes::str>& out,
+            const user_info& userInfo,
+            path_type filter);
+
         static const char* const AUTHORITY_EXEC_FILE;
-    private:
         static const char* const AUTHORITY_EXE_PATH;
+    private:
         static const int ALLOWED_CHILDREN = 10;
         static void* processing(void*); // thread handler for message processing/message output to logged-in client or child processes
 
@@ -175,3 +186,11 @@ namespace minecraft_controller
 }
 
 #endif
+
+/*
+ * Local Variables:
+ * mode:c++
+ * indent-tabs-mode:nil
+ * tab-width:4
+ * End:
+ */

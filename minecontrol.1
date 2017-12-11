@@ -81,6 +81,9 @@ The client will ask the minecontrol server to run the specified command as an au
 following \fIserver\-id\fR is counted as part of the command line separated by whitespace. If an argument isn't supplied on the command\-line then
 the client will prompt the user. This command requires authentication using the \fBlogin\fR command.
 .TP
+\fBauth-ls\fR [\fBuser\fR | \fBsystem\fR]
+The client will ask the minecontrol server to list the available authority programs available on disk.
+.TP
 \fBconsole\fR [\fIserver\-id\fR]
 The client will negotiate with the minecontrol server for console mode on the specified Minecraft server. The client will provide an asynchronous
 command\-line interface to the Minecraft server console. Issuing a 'quit' command will terminate console mode from the client end. If the Minecraft server

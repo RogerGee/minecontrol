@@ -2,6 +2,7 @@
 #include "minecontrol-authority.h"
 #include "minecontrol-protocol.h"
 #include "minecraft-controller.h"
+#include "minecraft-server.h"
 #include <rlibrary/rfile.h>
 #include <rlibrary/rstringstream.h>
 #include <rlibrary/rutility.h>
@@ -12,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <unistd.h>
 #include <signal.h>
 #include <limits.h>
@@ -280,6 +282,82 @@ str minecraft_server_message::get_gist_string() const
     return *format == *source;
 }
 
+/* static */
+void minecontrol_authority::
+list_authority_programs(rtypes::dynamic_array<str>& out,const user_info& userInfo,path_type filter)
+{
+    dynamic_array<str> paths;
+
+    // Grab system paths for authority programs.
+    if (filter == authority_any_path || authority_system_path) {
+        str path;
+        int iter = 0;
+        const char* const PATH = AUTHORITY_EXE_PATH;
+        while (PATH[iter] != 0) {
+            if (PATH[iter] == ':') {
+                paths.push_back(path);
+                path.clear();
+                iter += 1;
+            }
+            path.append(PATH[iter++]);
+        }
+        if (path.length() > 0) {
+            paths.push_back(path);
+        }
+    }
+
+    // Grab path for user programs.
+    if (filter == authority_any_path || filter == authority_user_path) {
+        minecraft_server_init_manager initInfo;
+        stringstream formatter;
+
+        initInfo.read_from_file();
+        if (initInfo.alternate_home().length() > 0) {
+            formatter << initInfo.alternate_home() << '/' << userInfo.userName;
+        }
+        else {
+            formatter << userInfo.homeDirectory;
+        }
+        formatter << '/' << minecraft_server_info::MINECRAFT_USER_DIRECTORY;
+        paths.push_back(static_cast<str&>(formatter.get_device()));
+    }
+
+    // Add all executable file names to the list.
+    for (size_type i = 0;i < paths.size();++i) {
+        const str& path = paths[i];
+        DIR* dir = opendir(path.c_str());
+
+        if (dir != nullptr) {
+            struct dirent ent;
+
+            while (true) {
+                struct stat st;
+                struct dirent* result;
+                int r = readdir_r(dir,&ent,&result);
+
+                if (r != 0 || result == nullptr) {
+                    break;
+                }
+                if (result->d_type != DT_REG && result->d_type != DT_LNK) {
+                    continue;
+                }
+
+                stringstream filePath(path.c_str());
+                filePath << '/' << result->d_name;
+                if (stat(filePath.get_device().c_str(),&st) == -1) {
+                    continue;
+                }
+
+                if ((st.st_mode & S_IXUSR) != 0) {
+                    out.push_back(result->d_name);
+                }
+            }
+
+            closedir(dir);
+        }
+    }
+}
+
 const char* const minecontrol_authority::AUTHORITY_EXE_PATH = "/usr/lib/minecontrol:/usr/local/lib/minecontrol"; // standard authority program location
 const char* const minecontrol_authority::AUTHORITY_EXEC_FILE = "minecontrol.exec";
 minecontrol_authority::minecontrol_authority(const pipe& ioChannel,int fderr,const str& serverDirectory,const user_info& userInfo)
@@ -437,12 +515,16 @@ minecontrol_authority::execute_result minecontrol_authority::run_auth_process(st
     if (pid == 0) { // child process
         const char* program;
         const char* argv[ARGV_BUF_SIZE];
-        // change process umask to deny write to group and others
+
+        // Change process umask to deny write to group and others.
         umask(S_IWGRP | S_IWOTH);
-        // prepare arguments
-        if ( !_prepareArgs(&commandLine[0],&program,argv,ARGV_BUF_SIZE) )
+
+        // Prepare command-line arguments.
+        if ( !_prepareArgs(&commandLine[0],&program,argv,ARGV_BUF_SIZE) ) {
             _exit((int)authority_exec_too_many_arguments);
-        // change permissions for this process
+        }
+
+        // Change permissions for this process.
 #ifdef __APPLE__
         if (setgid(_login.gid) == -1 || setegid(_login.gid) == -1
             || setuid(_login.uid) == -1 || seteuid(_login.uid) == -1)
@@ -450,41 +532,63 @@ minecontrol_authority::execute_result minecontrol_authority::run_auth_process(st
             _exit((int)authority_exec_attr_fail);
         }
 #else
-        if (setresgid(_login.gid,_login.gid,_login.gid)==-1 || setresuid(_login.uid,_login.uid,_login.uid)==-1)
+        if (setresgid(_login.gid,_login.gid,_login.gid) == -1
+            || setresuid(_login.uid,_login.uid,_login.uid) == -1)
+        {
             _exit((int)authority_exec_attr_fail);
+        }
 #endif
-        // duplicate open pipe end as stdin
+
+        // Duplicate open pipe end as stdin.
         _childStdIn[index].standard_duplicate();
-        // duplicate Minecraft server process's stdin as stdout, then
-        // close all open file descriptors except standard fds
+
+        // Duplicate Minecraft server process's stdin as stdout. Then close all
+        // open file descriptors except standard fds.
         _iochannel.duplicate_output(STDOUT_FILENO);
-        // duplicate _fderr as stderr for the process; this was provided by the caller
-        // and should point to an log/error file for the authority program that it shares
-        // with the Minecraft process
-        if (dup2(_fderr,STDERR_FILENO) != STDERR_FILENO)
+
+        // Duplicate _fderr as stderr for the process. This was provided by the
+        // caller and should point to an error/log file for the authority
+        // program that it shares with the Minecraft process.
+        if (dup2(_fderr,STDERR_FILENO) != STDERR_FILENO) {
             _exit((int)authority_exec_cannot_run);
+        }
+
+        // Close any open file descriptors.
         int maxfd;
         maxfd = sysconf(_SC_OPEN_MAX);
-        if (maxfd == -1)
+        if (maxfd == -1) {
             maxfd = 1000;
-        for (int fd = 3;fd < maxfd;++fd)
+        }
+        for (int fd = 3;fd < maxfd;++fd) {
             ::close(fd);
-        // modify path to point to minecontrol authority exe locations
-        str path = AUTHORITY_EXE_PATH;
-        path.push_back(':');
-        path += _serverDirectory;
-        // add the previous directory as well (this should be the 'minecraft' directory where
-        // minecontrol stores all the servers it creates); I include this so that a local user-created
-        // authority program can be shared by different server directory structures
-        path.push_back(':');
-        path += _serverDirectory;
-        path += "/..";
-        if (setenv("PATH",path.c_str(),1) == -1)
+        }
+
+        // Modify path to point to minecontrol authority exe locations. There
+        // are several standard, system locations that are hard-coded. The other
+        // location is the user's "minecraft" directory under their home
+        // directory. The base path may be changed by the alt-home setting.
+        minecraft_server_init_manager initInfo;
+        stringstream path(AUTHORITY_EXE_PATH);
+        path << ':';
+        initInfo.read_from_file();
+        if (initInfo.alternate_home().length() > 0) {
+            path << initInfo.alternate_home() << '/' << _login.userName;
+        }
+        else {
+            path << _login.homeDirectory;
+        }
+        path << '/' << minecraft_server_info::MINECRAFT_USER_DIRECTORY;
+        if (setenv("PATH",path.get_device().c_str(),1) == -1) {
             _exit((int)authority_exec_attr_fail);
-        // set current directory for process to server directory
-        if (chdir(_serverDirectory.c_str()) == -1)
+        }
+
+        // Set current directory for authority program process to server
+        // directory. This is so any files it saves can be per-server.
+        if (chdir(_serverDirectory.c_str()) == -1) {
             _exit((int)authority_exec_cannot_run);
-        // attempt to execute program
+        }
+
+        // Attempt to execute the specified authority program.
         if (execvp(program,(char* const*)argv) == -1) {
             if (errno == ENOENT)
                 _exit((int)authority_exec_program_not_found);
@@ -494,8 +598,10 @@ minecontrol_authority::execute_result minecontrol_authority::run_auth_process(st
                 _exit((int)authority_exec_access_denied);
             _exit((int)authority_exec_unspecified);
         }
-        // control no longer in this program
+
+        // Control no longer in this program here.
     }
+
     // close open end of pipe
     _childStdIn[index].close_open();
     /* wait a second for child process; if it exited see if the exit

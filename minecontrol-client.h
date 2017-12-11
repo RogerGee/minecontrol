@@ -51,16 +51,44 @@ namespace minecraft_controller
         bool command_status(rtypes::rstream&,rtypes::rstream&);
         bool command_extend(rtypes::rstream&,rtypes::rstream&);
         bool command_exec(rtypes::rstream&,rtypes::rstream&);
+        bool command_auth_ls(rtypes::rstream&,rtypes::rstream&);
         bool command_stop(rtypes::rstream&,rtypes::rstream&);
         bool command_console(rtypes::rstream&,rtypes::rstream&);
         bool command_shutdown(rtypes::rstream&,rtypes::rstream&);
 
         // helpers
-        inline rtypes::rstream& client_log(rtypes::rstream&);
-        inline rtypes::rstream& prepare_message();
-        inline rtypes::rstream& prepare_error();
-        inline rtypes::rstream& prepare_list_message();
-        inline rtypes::rstream& prepare_list_error();
+        rtypes::rstream& client_log(rtypes::rstream& stream)
+        {
+            return stream << '{' << sock->get_accept_id() << "} ";
+        }
+
+        rtypes::rstream& prepare_message()
+        {
+            msgbuf.begin("MESSAGE");
+            msgbuf.enqueue_field_name("Payload");
+            return msgbuf;
+        }
+
+        rtypes::rstream& prepare_error()
+        {
+            msgbuf.begin("ERROR");
+            msgbuf.enqueue_field_name("Payload");
+            return msgbuf;
+        }
+
+        rtypes::rstream& prepare_list_message()
+        {
+            msgbuf.begin("LIST-MESSAGE");
+            msgbuf.repeat_field("Item");
+            return msgbuf;
+        }
+
+        rtypes::rstream& prepare_list_error()
+        {
+            msgbuf.begin("LIST-ERROR");
+            msgbuf.repeat_field("Item");
+            return msgbuf;
+        }
 
         socket* sock;
         socket_stream connection;
@@ -74,3 +102,11 @@ namespace minecraft_controller
 }
 
 #endif
+
+/*
+ * Local Variables:
+ * mode:c++
+ * indent-tabs-mode:nil
+ * tab-width:4
+ * End:
+ */
