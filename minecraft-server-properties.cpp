@@ -27,6 +27,8 @@ bool mcraft_level_type::_readValue(rstream& stream)
         _value = mcraft_level_largebiomes;
     else if (id == "amplified")
         _value = mcraft_level_amplified;
+    else if (id == "customized")
+        _value = mcraft_level_customized;
     else if (id == "default")
         _value = mcraft_level_default;
     else
@@ -46,6 +48,8 @@ void mcraft_level_type::_putValue(rstream& stream) const
     case mcraft_level_amplified:
         stream << "AMPLIFIED";
         break;
+    case mcraft_level_customized:
+        stream << "CUSTOMIZED";
     default:
         stream << "DEFAULT";
         break;

@@ -208,7 +208,8 @@ namespace minecraft_controller
             mcraft_level_default,
             mcraft_level_flat,
             mcraft_level_largebiomes,
-            mcraft_level_amplified
+            mcraft_level_amplified,
+            mcraft_level_customized
         };
 
         mcraft_level_type(): numeric_prop(mcraft_level_default) {}
