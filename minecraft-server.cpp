@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <dirent.h>
 #include <pwd.h>
 #include <time.h>
 #include <errno.h>
@@ -235,6 +236,58 @@ void minecraft_server_init_manager::apply_properties(minecraft_server_info& info
 }
 
 // minecraft_controller::minecraft_server
+
+/*static*/ void minecraft_server::list_servers(rtypes::dynamic_array<rtypes::str>& out,
+    const user_info& userInfo)
+{
+    str mcraftdir;
+    stringstream formatter;
+    minecraft_server_init_manager initInfo;
+
+    // Deduce the user's minecraft directory.
+    initInfo.read_from_file();
+    if (initInfo.alternate_home().length() > 0) {
+        formatter << initInfo.alternate_home() << '/' << userInfo.userName;
+    }
+    else {
+        formatter << userInfo.homeDirectory;
+    }
+    formatter << '/' << minecraft_server_info::MINECRAFT_USER_DIRECTORY;
+    mcraftdir = static_cast<str&>(formatter.get_device());
+
+    // Walk the user's minecraft directory to discover minecraft servers.
+    DIR* dir = opendir(mcraftdir.c_str());
+
+    if (dir != nullptr) {
+        struct dirent ent;
+
+        while (true) {
+            struct stat st;
+            struct dirent* result;
+            int r = readdir_r(dir,&ent,&result);
+
+            if (r != 0 || result == nullptr) {
+                break;
+            }
+
+            if (result->d_type != DT_DIR) {
+                continue;
+            }
+
+            // Verify that the folder contains a "world" subdirectory.
+            stringstream dirPath(mcraftdir.c_str());
+            dirPath << '/' << result->d_name << "/world";
+            if (stat(dirPath.get_device().c_str(),&st) == -1) {
+                continue;
+            }
+            if (S_ISDIR(st.st_mode)) {
+                out.push_back(result->d_name);
+            }
+        }
+
+        closedir(dir);
+    }
+}
 
 /*static*/ set<uint32> minecraft_server::_idSet;
 /*static*/ mutex minecraft_server::_idSetProtect;

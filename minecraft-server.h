@@ -176,6 +176,10 @@ namespace minecraft_controller
         { return _internalName; }
         rtypes::uint32 get_internal_id() const
         { return _internalID; }
+
+        // Gets a list of the servers available for the specified user.
+        static void list_servers(rtypes::dynamic_array<rtypes::str>& out,
+            const user_info& userInfo);
     private:
         static rtypes::set<rtypes::uint32> _idSet;
         static mutex _idSetProtect;

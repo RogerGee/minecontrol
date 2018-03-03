@@ -52,6 +52,7 @@ namespace minecraft_controller
         bool command_extend(rtypes::rstream&,rtypes::rstream&);
         bool command_exec(rtypes::rstream&,rtypes::rstream&);
         bool command_auth_ls(rtypes::rstream&,rtypes::rstream&);
+        bool command_server_ls(rtypes::rstream&,rtypes::rstream&);
         bool command_stop(rtypes::rstream&,rtypes::rstream&);
         bool command_console(rtypes::rstream&,rtypes::rstream&);
         bool command_shutdown(rtypes::rstream&,rtypes::rstream&);
