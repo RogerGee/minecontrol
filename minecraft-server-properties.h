@@ -86,6 +86,15 @@ namespace minecraft_controller
         { return "announce-player-achievements"; }
     };
 
+    struct mcraft_broadcast_console_to_ops : boolean_prop
+    {
+        mcraft_broadcast_console_to_ops(): boolean_prop(false) {}
+
+    private:
+        virtual const char* _getKeyName() const
+        { return "broadcast-console-to-ops"; }
+    };
+
     struct mcraft_difficulty : numeric_prop
     {
         enum {
@@ -99,6 +108,15 @@ namespace minecraft_controller
     private:
         virtual const char* _getKeyName() const
         { return "difficulty"; }
+    };
+
+    struct mcraft_enable_command_block : boolean_prop
+    {
+        mcraft_enable_command_block(): boolean_prop(false) {}
+
+    private:
+        virtual const char* _getKeyName() const
+        { return "enable-command-block"; }
     };
 
     struct mcraft_enable_query : boolean_prop
@@ -117,15 +135,6 @@ namespace minecraft_controller
     private:
         virtual const char* _getKeyName() const
         { return "enable-rcon"; }
-    };
-
-    struct mcraft_enable_command_block : boolean_prop
-    {
-        mcraft_enable_command_block(): boolean_prop(false) {}
-
-    private:
-        virtual const char* _getKeyName() const
-        { return "enable-command-block"; }
     };
 
     struct mcraft_force_gamemode : boolean_prop
@@ -165,7 +174,7 @@ namespace minecraft_controller
         // default null
     private:
         virtual const char* _getKeyName() const
-        { return "generator_settings"; }
+        { return "generator-settings"; }
     };
 
     struct mcraft_hardcore : boolean_prop
@@ -228,6 +237,24 @@ namespace minecraft_controller
         { return "max-players"; }
     };
 
+    struct mcraft_max_tick_time : numeric_prop
+    {
+        mcraft_max_tick_time(): numeric_prop(60000) {}
+
+    private:
+        virtual const char* _getKeyName() const
+        { return "max-tick-time"; }
+    };
+
+    struct mcraft_max_world_size : numeric_prop
+    {
+        mcraft_max_world_size(): numeric_prop(29999984) {}
+
+    private:
+        virtual const char* _getKeyName() const
+        { return "max-world-size"; }
+    };
+
     struct mcraft_motd : string_prop
     {
         mcraft_motd(): string_prop("A Minecraft Server") {}
@@ -236,6 +263,15 @@ namespace minecraft_controller
         virtual bool _readValue(rtypes::rstream&);
         virtual const char* _getKeyName() const
         { return "motd"; }
+    };
+
+    struct mcraft_network_compression_threshold : numeric_prop
+    {
+        mcraft_network_compression_threshold(): numeric_prop(256) {}
+
+    private:
+        virtual const char* _getKeyName() const
+        { return "network-compression-threshold"; }
     };
 
     struct mcraft_online_mode : boolean_prop
@@ -271,6 +307,15 @@ namespace minecraft_controller
         { return "player-idle-timeout"; }
     };
 
+    struct mcraft_prevent_proxy_connections : boolean_prop
+    {
+        mcraft_prevent_proxy_connections(): boolean_prop(true) {}
+
+    private:
+        virtual const char* _getKeyName() const
+        { return "prevent-proxy-connections"; }
+    };
+
     struct mcraft_pvp : boolean_prop
     {
         mcraft_pvp(): boolean_prop(true) {}
@@ -287,6 +332,13 @@ namespace minecraft_controller
         { return "resource-pack"; }
     };
 
+    struct mcraft_resource_pack_sha1 : string_prop
+    {
+    private:
+        virtual const char* _getKeyName() const
+        { return "resource-pack-sha1"; }
+    };
+
     struct mcraft_server_ip : string_prop
     {
     private:
@@ -295,7 +347,7 @@ namespace minecraft_controller
     };
 
     struct mcraft_server_name : string_prop
-    {
+    { // NOTE: server-name is now defunct but kept for legacy support
     private:
         virtual const char* _getKeyName() const
         { return "server-name"; }
@@ -353,6 +405,15 @@ namespace minecraft_controller
     private:
         virtual const char* _getKeyName() const
         { return "spawn-protection"; }
+    };
+
+    struct mcraft_use_native_transport : boolean_prop
+    {
+        mcraft_use_native_transport(): boolean_prop(true) {}
+
+    private:
+        virtual const char* _getKeyName() const
+        { return "use-native-transport"; }
     };
 
     struct mcraft_view_distance : numeric_prop
@@ -437,3 +498,11 @@ namespace minecraft_controller
 #include "minecraft-server-properties.tcc"
 
 #endif
+
+/*
+ * Local Variables:
+ * mode:c++
+ * indent-tabs-mode:nil
+ * tab-width:4
+ * End:
+ */

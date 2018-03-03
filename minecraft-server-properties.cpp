@@ -64,6 +64,7 @@ minecraft_boolean_property_list::minecraft_boolean_property_list()
     _pushBack( new mcraft_allow_flight );
     _pushBack( new mcraft_allow_nether );
     _pushBack( new mcraft_announce_player_achievements );
+    _pushBack( new mcraft_broadcast_console_to_ops );
     _pushBack( new mcraft_enable_query );
     _pushBack( new mcraft_enable_rcon );
     _pushBack( new mcraft_enable_command_block );
@@ -71,11 +72,13 @@ minecraft_boolean_property_list::minecraft_boolean_property_list()
     _pushBack( new mcraft_generate_structures );
     _pushBack( new mcraft_hardcore );
     _pushBack( new mcraft_online_mode );
+    _pushBack( new mcraft_prevent_proxy_connections );
     _pushBack( new mcraft_pvp );
     _pushBack( new mcraft_snooper_enabled );
     _pushBack( new mcraft_spawn_animals );
     _pushBack( new mcraft_spawn_monsters );
     _pushBack( new mcraft_spawn_npcs );
+    _pushBack( new mcraft_use_native_transport );
     _pushBack( new mcraft_white_list );
 }
 minecraft_numeric_property_list::minecraft_numeric_property_list()
@@ -85,6 +88,9 @@ minecraft_numeric_property_list::minecraft_numeric_property_list()
     _pushBack( new mcraft_level_type );
     _pushBack( new mcraft_max_build_height );
     _pushBack( new mcraft_max_players );
+    _pushBack( new mcraft_max_tick_time );
+    _pushBack( new mcraft_max_world_size );
+    _pushBack( new mcraft_network_compression_threshold );
     _pushBack( new mcraft_op_permission_level );
     _pushBack( new mcraft_player_idle_timeout );
     _pushBack( new mcraft_server_port );
@@ -97,6 +103,7 @@ minecraft_string_property_list::minecraft_string_property_list()
     _pushBack( new mcraft_level_seed );
     _pushBack( new mcraft_motd );
     _pushBack( new mcraft_resource_pack );
+    _pushBack( new mcraft_resource_pack_sha1 );
     _pushBack( new mcraft_server_ip );
     _pushBack( new mcraft_server_name );
 }
