@@ -6,8 +6,6 @@
 /test/test
 /minecontrol
 /minecontrold
-/journal/
-/minecontrol-api/
 
 /.deps/
 Makefile

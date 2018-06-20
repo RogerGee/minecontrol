@@ -8,6 +8,8 @@
 #include "mutex.h"
 #include <rlibrary/rdynarray.h>
 #include <rlibrary/rset.h>
+#include <string>
+#include <map>
 
 namespace minecraft_controller
 {
@@ -21,8 +23,9 @@ namespace minecraft_controller
            server runs or is created */
         bool isNew; // request (if possible) that a new server be made with the specified name
         rtypes::str internalName; // corresponds to the directory that contains the Minecraft server files
+        rtypes::str profileName; // the profile to use
         user_info userInfo; // information for user that is running the server
-        
+
         /* extended properties: these properties extend those found in server.properties, often
            implementing a feature provided by this network server program; some properties may
            override default settings for a 'minecraft_server' read from the minecontrol.init file */
@@ -66,28 +69,51 @@ namespace minecraft_controller
     class minecraft_server_init_manager
     {
     public:
+        struct minecraft_server_profile
+        {
+            // The name of the profile.
+            rtypes::str profileName;
+
+            // The arguments provided by the profile.
+            rtypes::str cmdline;
+        };
+
         minecraft_server_init_manager();
 
         void read_from_file(); // reload settings from master file
         void apply_properties(minecraft_server_info&); // apply override and default properties
 
         char* exec()
-        { return &_exec[0]; }
-        char* arguments()
-        { return &_argumentsBuffer[0]; }
+        {
+            return &_exec[0];
+        }
+
+        char* arguments(const char* profileName);
+
         rtypes::byte shutdown_countdown() const
-        { return _shutdownCountdown; }
+        {
+            return _shutdownCountdown;
+        }
+
         rtypes::uint64 server_time() const // get time in seconds
-        { return _maxSeconds; }
+        {
+            return _maxSeconds;
+        }
+
         rtypes::uint16 max_servers() const
-        { return _maxServers; }
+        {
+            return _maxServers;
+        }
+
         const rtypes::str& alternate_home() const
-        { return _altHome; }
+        {
+            return _altHome;
+        }
     private:
         mutex _mtx;
 
         rtypes::str _exec; // path to executable
-        rtypes::str _argumentsBuffer; // arguments to executable separated by null-characters and terminated by a final null-character
+        std::map<std::string,minecraft_server_profile> profiles; // server profiles
         rtypes::byte _shutdownCountdown; // the number of seconds to wait for the server to shutdown before killing it
         rtypes::uint64 _maxSeconds; // the number of seconds to allow the server to run before auto-shutdown
         rtypes::uint16 _maxServers; // the maximum number of servers that minecontrol will allow
@@ -115,6 +141,8 @@ namespace minecraft_controller
             mcraft_start_server_permissions_fail, // the server process couldn't set correct permissions for minecraft server process
             mcraft_start_server_does_not_exist, // server identified by specified internalName (directory) was not found
             mcraft_start_server_already_exists, // a new server could not be started because another one already exists
+            mcraft_start_server_bad_profile, // the specified profile did not exist
+            mcraft_start_server_no_default_profile, // the default profile is not available
             mcraft_start_server_process_fail = 200, // the server process (Java) couldn't be executed (should be a larg(er) value)
             mcraft_start_failure_unknown
         };
@@ -243,7 +271,7 @@ namespace minecraft_controller
         // allocates a new minecraft_server object; the server object
         // (and any memory used to allocate it) is managed by this system;
         // however, the server handle is considered to be in a detached state,
-        // meaning this system will keep the object available for as long as 
+        // meaning this system will keep the object available for as long as
         // possible until either `shutdown_servers' is called; when finished,
         // the pointer should be passed to `attach_server'
         static server_handle* allocate_server();

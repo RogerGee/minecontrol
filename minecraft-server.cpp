@@ -29,7 +29,7 @@ static const char* const SERVER_INIT_FILE = "minecontrol.init"; // relative to c
 /* static */ const char* const minecraft_server_info::MINECRAFT_USER_DIRECTORY = "minecraft";
 
 minecraft_server_info::minecraft_server_info(bool createNew,const char* serverName,const user_info& userInformation)
-    : isNew(createNew), internalName(serverName), userInfo(userInformation)
+    : isNew(createNew), internalName(serverName), profileName("default"), userInfo(userInformation)
 {
     // set extended property defaults
     serverTime = uint64(-1);
@@ -138,21 +138,24 @@ minecraft_server_info::_prop_process_flag minecraft_server_info::_process_prop(c
 minecraft_server_init_manager::minecraft_server_init_manager()
 {
     _exec = "/usr/bin/java"; // java program default
-    _argumentsBuffer += "-Xmx1024M"; // defaults for minecraft: -Xmx1024M -Xms1024M -jar minecraftserver.jar nogui
-    _argumentsBuffer.push_back(0);
-    _argumentsBuffer += "-Xms1024M";
-    _argumentsBuffer.push_back(0);
-    _argumentsBuffer += "-jar";
-    _argumentsBuffer.push_back(0);
-    _argumentsBuffer += "minecraft_server.jar";
-    _argumentsBuffer.push_back(0);
-    _argumentsBuffer += "nogui";
-    _argumentsBuffer.push_back(0);
-    _argumentsBuffer.push_back(0);
     _shutdownCountdown = 30; // 30 seconds
     _maxSeconds = 3600*4; // 4 hours
     _maxServers = 0xffff; // allow unlimited (virtually)
 }
+
+char* minecraft_server_init_manager::arguments(const char* profileName)
+{
+    minecraft_server_profile* profile;
+
+    try {
+        profile = &profiles.at(profileName);
+    } catch (std::out_of_range) {
+        return nullptr;
+    }
+
+    return &profile->cmdline[0];
+}
+
 void minecraft_server_init_manager::read_from_file()
 {
     _mtx.lock();
@@ -171,24 +174,85 @@ void minecraft_server_init_manager::read_from_file()
             // test for each key
             if (key.length()==0 || key[0]=='#') // comment or blank line
                 continue;
-            if (key == "exec")
-	        ssValue.getline(_exec);
-            else if (key == "cmd-line") {
-	        _argumentsBuffer.clear();
-                while (ssValue >> key) {
-                    _argumentsBuffer += key;
-                    _argumentsBuffer.push_back(0);
+            if (key == "exec") {
+                ssValue.getline(_exec);
+            }
+            else if (key == "profile") {
+                str line;
+                int state;
+                size_t iter;
+                minecraft_server_profile newProfile;
+
+                // Parse profile name,
+                ssValue.getline(line);
+                iter = 0;
+                while (iter < line.length() && line[iter] != ':') {
+                    newProfile.profileName.push_back(line[iter]);
+                    iter += 1;
                 }
-                _argumentsBuffer.push_back(0);
+
+                // Parse command-line.
+                iter += 1;
+                state = 0;
+                while (iter < line.length()) {
+                    int ch = line[iter++];
+
+                    if (state == 0) {
+                        if (ch == '\\') {
+                            continue;
+                        }
+
+                        if (ch == '"') {
+                            state = 1;
+                            continue;
+                        }
+                        if (ch == '\'') {
+                            state = 2;
+                            continue;
+                        }
+
+                        if (isspace(ch)) {
+                            if (newProfile.cmdline.length() > 0) {
+                                newProfile.cmdline.push_back(0);
+                            }
+
+                            while (iter < line.length() && line[iter] == ' ') {
+                                iter += 1;
+                            }
+
+                            continue;
+                        }
+                    }
+                    else if (state == 1) {
+                        if (ch == '"') {
+                            state = 0;
+                            continue;
+                        }
+                    }
+                    else if (state == 2) {
+                        if (ch == '\'') {
+                            state = 0;
+                            continue;
+                        }
+                    }
+
+                    newProfile.cmdline.push_back(ch);
+                }
+                newProfile.cmdline.push_back(0);
+                newProfile.cmdline.push_back(0);
+
+                profiles[newProfile.profileName.c_str()] = newProfile;
             }
             else if (key == "server-time") {
                 ssValue >> _maxSeconds;
                 _maxSeconds *= 3600; // assume value was in hours; make units in seconds
             }
-            else if (key == "max-servers")
+            else if (key == "max-servers") {
                 ssValue >> _maxServers;
-            else if (key == "shutdown-countdown")
+            }
+            else if (key == "shutdown-countdown") {
                 ssValue >> _shutdownCountdown;
+            }
             else if (key == "alt-home") {
                 ssValue >> _altHome;
                 // remove trailing slashes
@@ -342,21 +406,35 @@ minecraft_server::~minecraft_server()
 minecraft_server::minecraft_server_start_condition minecraft_server::begin(minecraft_server_info& info)
 {
     pid_t pid;
+    char* javaArgs;
     const str& altHome = _globals.alternate_home();
     path mcraftdir;
+
+    // Figure out the path to the minecraft server.
     if (altHome.length() > 0) {
         mcraftdir = altHome;
         mcraftdir += info.userInfo.userName;
     }
-    else
+    else {
         mcraftdir = info.userInfo.homeDirectory;
+    }
+
+    // Lookup server arguments from profile.
+    javaArgs = _globals.arguments(info.profileName.c_str());
+    if (javaArgs == nullptr) {
+        if (info.profileName == "default") {
+            return mcraft_start_server_no_default_profile;
+        }
+        return mcraft_start_server_bad_profile;
+    }
+
     // create needed directories; make sure to change ownership and permissions
     if (!mcraftdir.exists() && (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1
             || chmod(mcraftdir.get_full_name().c_str(),S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP)==-1))
         return mcraft_start_server_filesystem_error;
-    // compute the server working directory (as a subdirectory of the home directory and the minecraft
-    // user directory); create the directory (and its parent directories where able) and change its owner
-    // to the authenticated user
+
+    // compute the server working directory (as a subdirectory of the home
+    // directory and the minecraft user directory)
     mcraftdir += minecraft_server_info::MINECRAFT_USER_DIRECTORY;
     if ( !mcraftdir.exists() ) {
         if (!mcraftdir.make(false) || chown(mcraftdir.get_full_name().c_str(),info.userInfo.uid,info.userInfo.gid)==-1
@@ -364,6 +442,9 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
             return mcraft_start_server_filesystem_error;
     }
     mcraftdir += info.internalName;
+
+    // create the directory (and its parent directories where able) and change
+    // its owner to the authenticated user
     if ( !mcraftdir.exists() ) {
         if (!info.isNew)
             return mcraft_start_server_does_not_exist;
@@ -371,14 +452,18 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
             || chmod(mcraftdir.get_full_name().c_str(),S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP)==-1)
             return mcraft_start_server_filesystem_error;
     }
-    else if (info.isNew)
+    else if (info.isNew) {
         return mcraft_start_server_already_exists;
-    // create or open existing error file; we'll send child process error output here; we need the descriptor in
-    // the parent process so we'll have to change its ownership to the authenticated user
+    }
+
+    // create or open existing error file; we'll send child process error output
+    // here; we need the descriptor in the parent process so we'll have to
+    // change its ownership to the authenticated user
     _fderr = open((mcraftdir.get_full_name()+"/errors").c_str(),O_WRONLY|O_CREAT|O_APPEND,0660);
     if (_fderr==-1 || fchown(_fderr,info.userInfo.uid,info.userInfo.gid)==-1)
         return mcraft_start_server_filesystem_error;
     _setup_error_file(info.internalName);
+
     // create new pipe for communication; this needs to be done before the fork
     _iochannel.open();
     pid = ::fork();
@@ -386,6 +471,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         // check server limit before proceeding
         if (_idSet.size()+1 > size_type(_globals.max_servers()))
             _exit((int)mcraft_start_server_too_many_servers);
+
         // setup the environment for the minecraft server:
         // change process privilages
 #ifdef __APPLE__
@@ -398,36 +484,45 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         if (::setresgid(info.userInfo.gid,info.userInfo.gid,info.userInfo.gid)==-1 || ::setresuid(info.userInfo.uid,info.userInfo.uid,info.userInfo.uid)==-1)
             _exit((int)mcraft_start_server_permissions_fail);
 #endif
+
         // change the process umask
         ::umask(S_IWGRP | S_IWOTH);
+
         // change working directory to the directory for minecraft server
         if (::chdir( mcraftdir.get_full_name().c_str() ) != 0)
             _exit((int)mcraft_start_server_filesystem_error);
+
         // create the server.properties file using the properties in info
         if ( !_create_server_properties_file(info) )
             _exit((int)mcraft_start_server_filesystem_error);
+
         // create the auth.txt file needed by a new server
         if (info.isNew && !_create_eula_txt_file())
             _exit((int)mcraft_start_server_filesystem_error);
+
         // check any extended server info options that depend on this process's state
         _check_extended_options_child(info);
+
         // prepare execve arguments
         int top = 0;
-        char* pstr = _globals.arguments();
-        char* args[25];
+        char* pstr = javaArgs;
+        char* args[128];
         args[top++] = _globals.exec();
-        while (true) {
+        while (top+1 < 128) {
             args[top++] = pstr;
-            while (*pstr)
+            while (*pstr) {
                 ++pstr;
+            }
             if (*++pstr == 0)
                 break;
         }
         args[top++] = NULL;
+
         // duplicate open ends of io channel pipe as standard IO
         // for this process; (this will close the descriptors)
         _iochannel.standard_duplicate(); // setup stdout and stdin
         duplicate_error_file(); // setup stderr
+
         // close all file descriptors not needed by the
         // child process; note that this is safe since
         // the fork closed any other threads running
@@ -438,13 +533,16 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
             maxfd = 1000;
         for (int fd = 3;fd < maxfd;++fd)
             ::close(fd);
+
         // execute program
         if (::execve(_globals.exec(),args,environ) == -1)
             _exit((int)mcraft_start_server_process_fail);
+
         // (control does not exist in this program anymore)
     }
     else if (pid != -1) {
         _iochannel.close_open(); // close open ends of pipe
+
         // wait for the child process to put data on the pipe;
         // this will be our signal that the process started up properly
         char message[5];
@@ -461,11 +559,14 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
                 return (minecraft_server_start_condition)WEXITSTATUS(wstatus);
             return mcraft_start_failure_unknown;
         }
+
         // initialize the authority which will manage the minecraft server
         _authority = new minecontrol_authority(_iochannel,_fderr,mcraftdir.get_full_name(),info.userInfo);
+
         // close the input side for our copy of the io channel; the authority
         // will maintain the read end of the pipe
         _iochannel.close_input();
+
         // set per-process attributes
         _internalName = info.internalName;
         _internalID = 1;
@@ -480,8 +581,10 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         _maxTime = _globals.server_time();
         _elapsed = 0;
         _threadCondition = true;
+
         // assign any extended properties in minecraft_info instance
         _check_extended_options(info);
+
         // create io thread that will manage the basic status of the server process
         if (::pthread_create(&_threadID,NULL,&minecraft_server::_io_thread,this) != 0) {
             ::kill(pid,SIGKILL); // just in case
@@ -490,6 +593,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     }
     else
         throw minecraft_server_error();
+
     return mcraft_start_success;
 }
 void minecraft_server::extend_time_limit(uint32 hoursMore)
@@ -590,7 +694,7 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
 /*static*/ void* minecraft_server::_io_thread(void* pobj)
 {
     // this thread is responsible for the basic input/output (including time management)
-    // functionality of managing the server process; occasionally, this 
+    // functionality of managing the server process; occasionally, this
     // thread will write a message to the standard input of the server process;
     // I consider this operation to always be atomic since I hopefully will
     // never write more than the pipe buffer's size number of bytes (this way,
@@ -784,6 +888,12 @@ rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::min
         stream << "the specified server did not exist in the expected location on disk";
     else if (condition == minecraft_server::mcraft_start_server_already_exists)
         stream << "a new server could not be started because another server exists with the same name";
+    else if (condition == minecraft_server::mcraft_start_server_bad_profile) {
+        stream << "the specified profile does not exist";
+    }
+    else if (condition == minecraft_server::mcraft_start_server_no_default_profile) {
+        stream << "no profile found: the default profile is not configured";
+    }
     else if (condition == minecraft_server::mcraft_start_server_process_fail)
         stream << "the minecraft server process could not be executed";
     else if (condition == minecraft_server::mcraft_start_java_process_fail)
@@ -948,7 +1058,7 @@ server_handle::server_handle()
         if (_handles[i]->pserver != NULL) {
             if ( _handles[i]->pserver->was_started() ) {
                 uint32 id = _handles[i]->pserver->get_internal_id();
-                minecontrold::standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end() 
+                minecontrold::standardLog << '{' << _handles[i]->_clientid << "} " << _handles[i]->pserver->end()
                                           << " {" << id << '}' << endline;
             }
             delete _handles[i]->pserver;

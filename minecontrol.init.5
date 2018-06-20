@@ -17,13 +17,18 @@ Whitespace may be included as part of the property-name or property-key.
 The \fBexec\fR property tells the minecontrol server what program to launch in response to a \fBSTART\fR command (see \fBminecontrol\fR(1)). This should
 be the Java virtual machine program. This property defaults to \fB/usr/bin/java\fR if not specified.
 .TP
-\fBcmd\-line\fR=\fIargument\fR ...
-The \fBcmd\-line\fR property specifies the command\-line for the Minecraft server process. Each argument is separated by whitespace. The program name is not to be
-specified and is inserted by the minecontrol server using the \fBexec\fR property value. The default value for this property is a command-line recommended by the
-creators of Minecraft:
+\fBprofile\fR=\fIprofile-name\fR:\fIarguments\fR ...
+The \fBprofile\fR property is used to specify a command\-line for the Minecraft
+server process. You are allowed to specify any number of \fBprofile\fR lines in
+the file. Each line begins with the profile name, followed by a colon. The rest
+of the line is the command-line. Each argument is separated by whitespace. The
+program name is not to be specified and is inserted by the minecontrol server
+using the \fBexec\fR property value. The default value for this property is to
+define a profile called \fBdefault\fR that specifies a command-line recommended
+by the creators of Minecraft:
 .RS
 .RS
-\-Xmx1024M \-Xms1024M \-jar minecraft_server.jar nogui
+\-Xmx1024M \-Xms1024M \-jar /path/to/minecraft_server.jar nogui
 .RE
 .RE
 .RS

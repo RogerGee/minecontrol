@@ -12,11 +12,12 @@
 # Path to Java executable (default is /usr/bin/java)
 #exec=/usr/bin/java
 
-# Command line for Java Minecraft server; this does not include the
-# typical executable name as the first argument (minecontrol provides
-# this internally using the "exec" property). The default value is
-# seen below.
-#cmd-line=-Xmx1024M -Xms1024M -jar minecraft_server.jar nogui
+# Profiles for launching the minecraft servers. These are just command-lines
+# passed to the Java process, not include the typical executable name as the
+# first argument since minecontrol provides this internally using the "exec"
+# property. The format is "profile=<profile-name>:<cmdline>". The default value
+# is seen below.
+profile=default:-Xmx1024M -Xms1024M -jar /path/to/minecraft_server.jar nogui
 
 # Server time for each server process (default is 4 hours)
 #server-time=4
