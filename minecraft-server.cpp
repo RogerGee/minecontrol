@@ -188,6 +188,16 @@ minecraft_server_info::_process_prop(const str& key,const str& value,bool applyI
 
 // minecraft_controller::minecraft_server_init_manager
 
+/*static*/ void minecraft_server_init_manager::list_profiles(rtypes::dynamic_array<rtypes::str>& out)
+{
+    minecraft_server_init_manager initInfo;
+
+    initInfo.read_from_file();
+    for (auto it = initInfo.profiles.begin();it != initInfo.profiles.end();++it) {
+        out.push_back(it->first.c_str());
+    }
+}
+
 minecraft_server_init_manager::minecraft_server_init_manager()
 {
     _exec = "/usr/bin/java"; // java program default

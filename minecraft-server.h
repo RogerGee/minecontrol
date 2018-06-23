@@ -115,6 +115,9 @@ namespace minecraft_controller
         {
             return _altHome;
         }
+
+        // Gets a list of the server profiles available.
+        static void list_profiles(rtypes::dynamic_array<rtypes::str>& out);
     private:
         mutex _mtx;
 

@@ -16,7 +16,7 @@ using namespace minecraft_controller;
 /*static*/ mutex controller_client::clientsMutex;
 /*static*/ dynamic_array<void*> controller_client::clients;
 /*static*/ size_type controller_client::CMD_COUNT_WITHOUT_LOGIN = 2;
-/*static*/ size_type controller_client::CMD_COUNT_WITH_LOGIN = 8;
+/*static*/ size_type controller_client::CMD_COUNT_WITH_LOGIN = 9;
 /*static*/ size_type controller_client::CMD_COUNT_WITH_PRIVILEGED_LOGIN = 1;
 /*static*/ const char* const controller_client::CMDNAME_WITHOUT_LOGIN[] =
 {
@@ -31,14 +31,16 @@ using namespace minecraft_controller;
     "start", "stop",
     "logout", "console",
     "extend", "exec",
-    "auth-ls", "server-ls"
+    "auth-ls", "server-ls",
+    "profile-ls"
 };
 /*static*/ const controller_client::command_call controller_client::CMDFUNC_WITH_LOGIN[] =
 {
     &controller_client::command_start, &controller_client::command_stop,
     &controller_client::command_logout, &controller_client::command_console,
     &controller_client::command_extend, &controller_client::command_exec,
-    &controller_client::command_auth_ls, &controller_client::command_server_ls
+    &controller_client::command_auth_ls, &controller_client::command_server_ls,
+    &controller_client::command_profile_ls
 };
 /*static*/ const char* const controller_client::CMDNAME_WITH_PRIVILEGED_LOGIN[] =
 {
@@ -614,6 +616,28 @@ bool controller_client::command_server_ls(rstream&,rstream&)
         rstream& msg = prepare_list_message();
         for (size_type i = 0;i < servers.size();++i) {
             msg << servers[i] << newline;
+        }
+        msg.flush_output();
+    }
+    connection << msgbuf.get_message();
+
+    return true;
+}
+
+bool controller_client::command_profile_ls(rstream&,rstream&)
+{
+    dynamic_array<str> profiles;
+
+    minecraft_server_init_manager::list_profiles(profiles);
+
+    if (profiles.size() == 0) {
+        rstream& msg = prepare_message();
+        msg << "There are no profiles available." << flush;
+    }
+    else {
+        rstream& msg = prepare_list_message();
+        for (size_type i = 0;i < profiles.size();++i) {
+            msg << profiles[i] << newline;
         }
         msg.flush_output();
     }
