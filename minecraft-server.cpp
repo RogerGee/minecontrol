@@ -71,33 +71,51 @@ minecraft_server_info::minecraft_server_info(bool createNew,const char* serverNa
 }
 void minecraft_server_info::read_props(str& propertyList,rstream& errorStream)
 {
+    auto sanitize_values = [](str& key,str& value)
+    {
+        // replace any commas with spaces
+        for (size_type i = 0;i<key.size();i++) {
+            if (key[i] == ',') {
+                key[i] = ' ';
+            }
+        }
+        for (size_type i = 0;i<value.size();i++) {
+            if (value[i] == ',') {
+                value[i] = ' ';
+            }
+        }
+    };
+
     stringstream inputStream(propertyList);
     inputStream.delimit_whitespace(false);
     inputStream.add_extra_delimiter("=\n");
     while ( inputStream.has_input() ) {
         str key, value;
         inputStream >> key >> value;
-        // check to see if the property belongs to
-        // the server.properties file list; if not,
-        // attempt the extended properties list
-        _prop_process_flag flag = _process_prop(key,value);
+
+        // Check to see if the property is an extended property; we want to give
+        // these preference. Otherwise see if it is a Minecraft property.
+        _prop_process_flag flag = _process_ex_prop(key,value);
         if (flag==_prop_process_bad_key || flag==_prop_process_undefined) {
-            flag = _process_ex_prop(key,value);
-            // replace any commas with spaces
-            for (size_type i = 0;i<key.size();i++)
-                if (key[i] == ',')
-                    key[i] = ' ';
-            for (size_type i = 0;i<value.size();i++)
-                if (key[i] == ',')
-                    key[i] = ' ';
+            flag = _process_prop(key,value);
+
             // error messages are destined for the client; use a newline to delimit
-            if (flag == _prop_process_bad_key)
-                errorStream << "Note: the specified option '" << key << "' does not exist or cannot be used and was ignored." << newline;
+            if (flag == _prop_process_bad_key) {
+                sanitize_values(key,value);
+                errorStream << "Note: the specified option '" << key
+                            << "' does not exist or cannot be used and was ignored."
+                            << newline;
+            }
         }
-        if (flag == _prop_process_bad_value)
-            errorStream << "Error: the specified option '" << key << "' cannot be assigned the value '" << value << "'." << newline;
+        if (flag == _prop_process_bad_value) {
+            sanitize_values(key,value);
+            errorStream << "Error: the specified option '" << key
+                        << "' cannot be assigned the value '" << value << "'."
+                        << newline;
+        }
     }
 }
+
 bool minecraft_server_info::set_prop(const str& key,const str& value,bool applyIfDefault)
 {
     // try the normal server.properties file property list then the extended list
@@ -105,23 +123,40 @@ bool minecraft_server_info::set_prop(const str& key,const str& value,bool applyI
         return false;
     return true;
 }
-minecraft_server_info::_prop_process_flag minecraft_server_info::_process_ex_prop(const str& key,const str& value)
+
+minecraft_server_info::_prop_process_flag
+minecraft_server_info::_process_ex_prop(const str& key,const str& value)
 {
     const_stringstream ss(value);
-    if (key == "servertime" || key == "server-time") { // uint64: how long the mcraft server stays alive in seconds
+
+    // "servertime" OR "server-time" [uint64]: how long the mcraft server stays
+    // alive in seconds
+    if (key == "servertime" || key == "server-time") {
         if ( !(ss >> serverTime) )
             return _prop_process_bad_value;
         // assume server time was in hours; compute seconds
         serverTime *= 3600;
         return _prop_process_success;
     }
-    else if (key == "serverexec") { // string: program names separated by colons (:) to pass to the minecontrol authority (by creating minecontrol.exec file)
+
+    // "serverexec" [string]: Program names separated by colons (:) to pass to
+    // the minecontrol authority (by creating minecontrol.exec file)
+    if (key == "serverexec") {
         serverExec = value;
         return _prop_process_success;
     }
+
+    // "profile" [string]: The profile to use for the server.
+    if (key == "profile") {
+        profileName = value;
+        return _prop_process_success;
+    }
+
     return _prop_process_bad_key;
 }
-minecraft_server_info::_prop_process_flag minecraft_server_info::_process_prop(const str& key,const str& value,bool applyIfDefault)
+
+minecraft_server_info::_prop_process_flag
+minecraft_server_info::_process_prop(const str& key,const str& value,bool applyIfDefault)
 {
     // check the three different types of properties
     {
