@@ -507,9 +507,12 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         return mcraft_start_server_already_exists;
     }
 
-    // Set up per-process attributes.
+    // Set up per-process attributes. We should set values here that are
+    // required by helper functions or that serve as defaults before extended
+    // options are applied.
     _serverDir = mcraftdir;
     _internalName = info.internalName;
+    _maxTime = _globals.server_time();
 
     // create or open existing error file; we'll send child process error output
     // here; we need the descriptor in the parent process so we'll have to
@@ -662,7 +665,6 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         _processID = pid;
         _uid = info.userInfo.uid;
         _gid = info.userInfo.gid;
-        _maxTime = _globals.server_time();
         _elapsed = 0;
         _threadCondition = true;
 
