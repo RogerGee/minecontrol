@@ -14,15 +14,33 @@
 #include <time.h>
 #include <errno.h>
 #include <string.h>
-#include <rlibrary/rfilename.h>
 #include <rlibrary/rutility.h>
 #include <rlibrary/rfile.h>
 using namespace rtypes;
 using namespace minecraft_controller;
 
-// globals
+// Globals
+
 extern char **environ;
-static const char* const SERVER_INIT_FILE = "minecontrol.init"; // relative to current working directory (this is a global server init file)
+
+// Files relative to current working directory (global files):
+#define SERVER_INIT_FILE "minecontrol.init"
+
+// Files relative to minecraft directory:
+#define MINECONTROL_ERRORS_FILE "errors"
+#define MINECONTROL_PROPERTIES_FILE "minecontrol.properties"
+
+#define MINECONTROL_PROPERTIES_HEADER           \
+    "# minecontrol.properties\n"                \
+    "#\n"                                               \
+    "# This file stores per-server minecontrol properties.\n"
+
+#define MINECONTROL_PROPERTIES_PROFILE_HEADER                           \
+    "# profile\n"                                                       \
+    "#\n"                                                               \
+    "# Stores the server profile used to execute the Minecraft server. This maps to a\n" \
+    "# profile defined in the global \"minecontrol.init\" file. Warning - changing this\n" \
+    "# property may result in undefined behavior that may break your server!\n"
 
 // minecraft_controller::minecraft_server_info
 
@@ -361,6 +379,7 @@ void minecraft_server_init_manager::apply_properties(minecraft_server_info& info
 /*static*/ short minecraft_server::_handlerRef = 0;
 /*static*/ uint64 minecraft_server::_alarmTick = 0;
 /*static*/ minecraft_server_init_manager minecraft_server::_globals;
+
 minecraft_server::minecraft_server()
 {
     // set up shared handler and real timer if not already set up
@@ -387,9 +406,11 @@ minecraft_server::minecraft_server()
     _uid = -1;
     _gid = -1;
     _fderr = -1;
+    _propsFileIsDirty = false;
     // reload global settings in case they have changed
     _globals.read_from_file();
 }
+
 minecraft_server::~minecraft_server()
 {
     this->end();
@@ -406,12 +427,13 @@ minecraft_server::~minecraft_server()
             throw minecraft_server_error();
     }
 }
+
 minecraft_server::minecraft_server_start_condition minecraft_server::begin(minecraft_server_info& info)
 {
     pid_t pid;
     char* javaArgs;
-    const str& altHome = _globals.alternate_home();
     path mcraftdir;
+    const str& altHome = _globals.alternate_home();
 
     // Figure out the path to the minecraft server.
     if (altHome.length() > 0) {
@@ -420,18 +442,6 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     }
     else {
         mcraftdir = info.userInfo.homeDirectory;
-    }
-
-    // Lookup server arguments from profile. If the profile wasn't specified,
-    // use the default profile.
-    const str& profileName = (info.profileName.length() == 0) ? _globals.default_profile() : info.profileName;
-    javaArgs = _globals.arguments(profileName.c_str());
-    if (javaArgs == nullptr) {
-        if (info.profileName.length() == 0) {
-            return mcraft_start_server_no_default_profile;
-        }
-
-        return mcraft_start_server_bad_profile;
     }
 
     // create needed directories; make sure to change ownership and permissions
@@ -462,13 +472,43 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         return mcraft_start_server_already_exists;
     }
 
+    // Set up per-process attributes.
+    _serverDir = mcraftdir;
+    _internalName = info.internalName;
+
     // create or open existing error file; we'll send child process error output
     // here; we need the descriptor in the parent process so we'll have to
     // change its ownership to the authenticated user
-    _fderr = open((mcraftdir.get_full_name()+"/errors").c_str(),O_WRONLY|O_CREAT|O_APPEND,0660);
-    if (_fderr==-1 || fchown(_fderr,info.userInfo.uid,info.userInfo.gid)==-1)
+    _fderr = open((mcraftdir.get_full_name() + "/" MINECONTROL_ERRORS_FILE).c_str(),O_WRONLY|O_CREAT|O_APPEND,0660);
+    if (_fderr == -1 || fchown(_fderr,info.userInfo.uid,info.userInfo.gid) == -1) {
         return mcraft_start_server_filesystem_error;
-    _setup_error_file(info.internalName);
+    }
+    _setup_error_file();
+
+    // Read minecontrol.properties file.
+    _read_minecontrol_properties_file();
+
+    // Assign any extended properties in minecraft_info instance. These will
+    // override any existing properties.
+    _check_extended_options(info);
+
+    // Select a profile. We choose the loaded profile over the default if it is
+    // available. The loaded profile can either be specified in the extended
+    // options or in the minecontrol properties file.
+    if (_profileName.length() == 0) {
+        _profileName = _globals.default_profile();
+        _propsFileIsDirty = true;
+    }
+
+    // Lookup server arguments from profile.
+    javaArgs = _globals.arguments(_profileName.c_str());
+    if (javaArgs == nullptr) {
+        if (_profileName.length() == 0) {
+            return mcraft_start_server_no_default_profile;
+        }
+
+        return mcraft_start_server_bad_profile;
+    }
 
     // create new pipe for communication; this needs to be done before the fork
     _iochannel.open();
@@ -508,6 +548,9 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
 
         // check any extended server info options that depend on this process's state
         _check_extended_options_child(info);
+
+        // Create the minecontrol properties file.
+        _create_minecontrol_properties_file();
 
         // prepare execve arguments
         int top = 0;
@@ -558,7 +601,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
             // close the pipe, close the error file, and reap the child process
             int wstatus;
             _iochannel.close();
-            _close_error_file(info.internalName);
+            _close_error_file();
             if (::waitpid(pid,&wstatus,0) != pid) // this should happen sooner rather than never...
                 throw minecraft_server_error();
             if ( WIFEXITED(wstatus) )
@@ -574,11 +617,11 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         _iochannel.close_input();
 
         // set per-process attributes
-        _internalName = info.internalName;
         _internalID = 1;
         _idSetProtect.lock();
-        while ( _idSet.contains(_internalID) )
+        while (_idSet.contains(_internalID)) {
             ++_internalID;
+        }
         _idSet.insert(_internalID);
         _idSetProtect.unlock();
         _processID = pid;
@@ -588,20 +631,19 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         _elapsed = 0;
         _threadCondition = true;
 
-        // assign any extended properties in minecraft_info instance
-        _check_extended_options(info);
-
         // create io thread that will manage the basic status of the server process
         if (::pthread_create(&_threadID,NULL,&minecraft_server::_io_thread,this) != 0) {
             ::kill(pid,SIGKILL); // just in case
             throw minecraft_server_error();
         }
     }
-    else
+    else {
         throw minecraft_server_error();
+    }
 
     return mcraft_start_success;
 }
+
 void minecraft_server::extend_time_limit(uint32 hoursMore)
 {
     if (_processID != -1) {
@@ -621,10 +663,12 @@ void minecraft_server::extend_time_limit(uint32 hoursMore)
         _iochannel.write(msg.get_device());
     }
 }
+
 bool minecraft_server::duplicate_error_file() const
 {
     return _fderr!=-1 && dup2(_fderr,STDERR_FILENO)==STDERR_FILENO;
 }
+
 minecraft_server::minecraft_server_exit_condition minecraft_server::end()
 {
     minecraft_server_exit_condition status;
@@ -683,7 +727,7 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
             _authority = NULL;
         }
         /* we must wait until the authority has finished using the error file descriptor */
-        _close_error_file(_internalName);
+        _close_error_file();
         //_threadID = -1;
         _threadExit = mcraft_noexit;
         _maxTime = 0;
@@ -693,10 +737,12 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
     }
     return status;
 }
+
 /*static*/ void minecraft_server::_alarm_handler(int)
 {
     ++_alarmTick;
 }
+
 /*static*/ void* minecraft_server::_io_thread(void* pobj)
 {
     // this thread is responsible for the basic input/output (including time management)
@@ -777,6 +823,7 @@ minecraft_server::minecraft_server_exit_condition minecraft_server::end()
     // let another context manage waiting on the process
     return &pserver->_threadExit;
 }
+
 bool minecraft_server::_create_server_properties_file(minecraft_server_info& info)
 {
     file props("server.properties",file_create_always);
@@ -789,6 +836,7 @@ bool minecraft_server::_create_server_properties_file(minecraft_server_info& inf
     info.get_props().write(fstream);
     return true;
 }
+
 bool minecraft_server::_create_eula_txt_file()
 {
     // we need to create the obnoxious eula.txt file so that the server
@@ -799,11 +847,19 @@ bool minecraft_server::_create_eula_txt_file()
     eulatxt.write("eula=true\n");
     return true;
 }
+
 void minecraft_server::_check_extended_options(const minecraft_server_info& info)
 {
-    if (info.serverTime != uint64(-1))
+    if (info.serverTime != uint64(-1)) {
         _maxTime = info.serverTime;
+    }
+
+    if (info.profileName.length() > 0) {
+        _profileName = info.profileName;
+        _propsFileIsDirty = true;
+    }
 }
+
 void minecraft_server::_check_extended_options_child(const minecraft_server_info& info)
 {
     if (info.serverExec.length() > 0) {
@@ -828,7 +884,8 @@ void minecraft_server::_check_extended_options_child(const minecraft_server_info
         }
     }
 }
-void minecraft_server::_setup_error_file(const str& name)
+
+void minecraft_server::_setup_error_file()
 {
     time_t t;
     char buf[40];
@@ -837,7 +894,7 @@ void minecraft_server::_setup_error_file(const str& name)
     time(&t);
     strftime(buf,40,"%a %b %d %Y %H:%M:%S",localtime_r(&t,&tmval));
     ss << '[' << buf << "] ";
-    ss << name;
+    ss << _internalName;
     for (size_type i = ss.get_device().length();i<80;++i)
         ss.put('-');
     ss << newline;
@@ -847,11 +904,12 @@ void minecraft_server::_setup_error_file(const str& name)
                                   << _fderr << "): " << strerror(errno) << endline;
     }
 }
-void minecraft_server::_close_error_file(const str& name)
+
+void minecraft_server::_close_error_file()
 {
     if (_fderr != -1) {
         str s;
-        str part = name;
+        str part = _internalName;
         char buf[40];
         time_t t;
         tm tmval;
@@ -875,6 +933,60 @@ void minecraft_server::_close_error_file(const str& name)
         close(_fderr);
         _fderr = -1;
     }
+}
+
+bool minecraft_server::_read_minecontrol_properties_file()
+{
+    file propsFile;
+    str fileName = _serverDir.get_full_name() + "/" MINECONTROL_PROPERTIES_FILE;
+
+    if (propsFile.open_input(fileName.c_str(),file_open_existing)) {
+        stringstream ss;
+        file_stream stream(propsFile);
+
+        ss.add_extra_delimiter('=');
+
+        while (stream.has_input()) {
+            str key;
+
+            ss.reset_input_iter();
+            stream.getline(ss.get_device());
+
+            ss >> key;
+            rutil_to_lower_ref(key);
+            if (key.length() == 0 || key[0] == '#') {
+                continue;
+            }
+
+            if (key == "profile") {
+                ss.getline(_profileName);
+            }
+        }
+    }
+
+    return true;
+}
+
+bool minecraft_server::_create_minecontrol_properties_file()
+{
+    // NOTE: This member function assumes the PWD is set to the minecraft server
+    // directory.
+
+    if (!_propsFileIsDirty) {
+        return true;
+    }
+
+    file propsFile(MINECONTROL_PROPERTIES_FILE,file_create_always);
+    if (!propsFile.is_valid_context()) {
+        return false;
+    }
+
+    file_stream fstream(propsFile);
+    fstream << MINECONTROL_PROPERTIES_HEADER << newline;
+    fstream << MINECONTROL_PROPERTIES_PROFILE_HEADER
+            << "profile=" << _profileName << newline;
+
+    return true;
 }
 
 rstream& minecraft_controller::operator <<(rstream& stream,minecraft_server::minecraft_server_start_condition condition)

@@ -8,6 +8,7 @@
 #include "mutex.h"
 #include <rlibrary/rdynarray.h>
 #include <rlibrary/rset.h>
+#include <rlibrary/rfilename.h>
 #include <string>
 #include <map>
 
@@ -227,6 +228,8 @@ namespace minecraft_controller
 
         // per server attributes
         rtypes::str _internalName;
+        rtypes::path _serverDir;
+        rtypes::str _profileName;
         rtypes::uint32 _internalID;
         pthread_t _threadID;
         rtypes::int32 _processID;
@@ -238,14 +241,17 @@ namespace minecraft_controller
         rtypes::uint64 _elapsed;
         int _uid, _gid;
         int _fderr;
+        bool _propsFileIsDirty;
 
         // helpers
         bool _create_server_properties_file(minecraft_server_info&);
         bool _create_eula_txt_file();
         void _check_extended_options(const minecraft_server_info&); // options that need to be applied in this program
         void _check_extended_options_child(const minecraft_server_info&); // options that need to be applied in child process
-        void _setup_error_file(const rtypes::str& name);
-        void _close_error_file(const rtypes::str& name);
+        void _setup_error_file();
+        void _close_error_file();
+        bool _read_minecontrol_properties_file();
+        bool _create_minecontrol_properties_file();
     };
 
     rtypes::rstream& operator <<(rtypes::rstream&,minecraft_server::minecraft_server_start_condition);
