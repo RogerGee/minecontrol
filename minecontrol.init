@@ -1,13 +1,19 @@
-# minecontrol.init - global, per server init file
-#  This file is read by minecontrol everytime a new server is executed.
-# Some of these properties apply to how the Minecraft server process is
-# executed each time the user starts it up. Others are only used when 
-# the server is created for the first time.
-#  This file is not necessary for minecontrol to function; minecontrol
-# will revert to internal defaults if properties are left unspecified.
-# Also, minecontrol will not create this file. This commented version
-# was supplied with the minecontrol Debian software package.
-#  Minecontrol author: Roger P. Gee <rpg11a@acu.edu>
+# minecontrol.init
+#
+# This is minecontrol's global, per server init file.
+#
+# This file is read by minecontrol everytime a new server is executed.  Some of
+# these properties apply to how the Minecraft server process is executed each
+# time the user starts it up. Others are only used when the server is created
+# for the first time.
+#
+# This file is not necessary for minecontrol to function; minecontrol will
+# revert to internal defaults if properties are left unspecified. However at
+# least one profile must be provided in order to run servers. Also, minecontrol
+# will not create this file. This commented version is supplied with the
+# minecontrol Debian software package.
+#
+# Minecontrol author: Roger P. Gee <rpg11a@acu.edu>
 
 # Path to Java executable (default is /usr/bin/java)
 #exec=/usr/bin/java
@@ -15,9 +21,15 @@
 # Profiles for launching the minecraft servers. These are just command-lines
 # passed to the Java process, not include the typical executable name as the
 # first argument since minecontrol provides this internally using the "exec"
-# property. The format is "profile=<profile-name>:<cmdline>". The default value
-# is seen below.
+# property. The minecontrol server will record the profile in the servers
+# minecontrol.properties file. It is recommended that each profile stay within a
+# major version of Minecraft so as to avoid borking a server when trying out a
+# new version. The format is "profile=<profile-name>:<cmdline>".
 profile=default:-Xmx1024M -Xms1024M -jar /path/to/minecraft_server.jar nogui
+
+# The default profile to use when creating a new server for which the client
+# provides no profile explicitly.
+default-profile=default
 
 # Server time for each server process (default is 4 hours)
 #server-time=4
@@ -26,7 +38,7 @@ profile=default:-Xmx1024M -Xms1024M -jar /path/to/minecraft_server.jar nogui
 # (default is virtually unrestricted at 65535)
 #max-servers=1
 
-# Shutdown countdown specifies the time (in seconds) to wait for a 
+# Shutdown countdown specifies the time (in seconds) to wait for a
 # Minecraft server to completely shutdown. If this time value expires
 # then the Minecraft server process is sent the sure kill signal. The
 # default value is 30 seconds.
@@ -45,14 +57,14 @@ profile=default:-Xmx1024M -Xms1024M -jar /path/to/minecraft_server.jar nogui
 # these are only applied if the user is creating a new server and
 # if the property had not previously been specified by the user when
 # creating the server in minecontrol. Use the format:
-#  default-[PROPERTY-NAME]=[VALUE] (see example with server-port 
+#  default-[PROPERTY-NAME]=[VALUE] (see example with server-port
 # property below)
 #default-server-port=40100
 
 # You can also specify override properties; these are applied only if
 # the user is creating a new server. If the user specifies this property
-# when creating the server it takes no effect and is overrided by the 
-# property specified here. This is somewhat effective at letting the 
+# when creating the server it takes no effect and is overrided by the
+# property specified here. This is somewhat effective at letting the
 # administrator choose initial properties for a server without the user
 # having to know the details about the system (like port numbers, world-size
 # restrictions, ETC.). Use the format:

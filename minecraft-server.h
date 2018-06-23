@@ -88,6 +88,11 @@ namespace minecraft_controller
             return &_exec[0];
         }
 
+        const rtypes::str& default_profile() const
+        {
+            return defaultProfile;
+        }
+
         char* arguments(const char* profileName);
 
         rtypes::byte shutdown_countdown() const
@@ -113,6 +118,7 @@ namespace minecraft_controller
         mutex _mtx;
 
         rtypes::str _exec; // path to executable
+        rtypes::str defaultProfile; // name of default profile
         std::map<std::string,minecraft_server_profile> profiles; // server profiles
         rtypes::byte _shutdownCountdown; // the number of seconds to wait for the server to shutdown before killing it
         rtypes::uint64 _maxSeconds; // the number of seconds to allow the server to run before auto-shutdown

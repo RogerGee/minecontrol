@@ -29,7 +29,7 @@ static const char* const SERVER_INIT_FILE = "minecontrol.init"; // relative to c
 /* static */ const char* const minecraft_server_info::MINECRAFT_USER_DIRECTORY = "minecraft";
 
 minecraft_server_info::minecraft_server_info(bool createNew,const char* serverName,const user_info& userInformation)
-    : isNew(createNew), internalName(serverName), profileName("default"), userInfo(userInformation)
+    : isNew(createNew), internalName(serverName), userInfo(userInformation)
 {
     // set extended property defaults
     serverTime = uint64(-1);
@@ -176,6 +176,9 @@ void minecraft_server_init_manager::read_from_file()
                 continue;
             if (key == "exec") {
                 ssValue.getline(_exec);
+            }
+            else if (key == "default-profile") {
+                ssValue.getline(defaultProfile);
             }
             else if (key == "profile") {
                 str line;
@@ -419,12 +422,15 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         mcraftdir = info.userInfo.homeDirectory;
     }
 
-    // Lookup server arguments from profile.
-    javaArgs = _globals.arguments(info.profileName.c_str());
+    // Lookup server arguments from profile. If the profile wasn't specified,
+    // use the default profile.
+    const str& profileName = (info.profileName.length() == 0) ? _globals.default_profile() : info.profileName;
+    javaArgs = _globals.arguments(profileName.c_str());
     if (javaArgs == nullptr) {
-        if (info.profileName == "default") {
+        if (info.profileName.length() == 0) {
             return mcraft_start_server_no_default_profile;
         }
+
         return mcraft_start_server_bad_profile;
     }
 

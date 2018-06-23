@@ -23,18 +23,23 @@ server process. You are allowed to specify any number of \fBprofile\fR lines in
 the file. Each line begins with the profile name, followed by a colon. The rest
 of the line is the command-line. Each argument is separated by whitespace. The
 program name is not to be specified and is inserted by the minecontrol server
-using the \fBexec\fR property value. The default value for this property is to
-define a profile called \fBdefault\fR that specifies a command-line recommended
-by the creators of Minecraft:
+using the \fBexec\fR property value. Here's an example value:
 .RS
 .RS
 \-Xmx1024M \-Xms1024M \-jar /path/to/minecraft_server.jar nogui
 .RE
 .RE
 .RS
-Of course, you will need to point to the correct Minecraft server jarfile based on your system configuration. This default value will search relative to the
-directory /etc/minecontrold.
+Of course, you will need to point to the correct Minecraft server jarfile based
+on your system configuration. Ideally you should create profiles that align with
+Minecraft major versions so you can run multiple versions of Minecraft server
+simultaneously.
 .RE
+.TP
+\fBdefault-profile\fR=\fIprofile-name\fR
+The \fBdefault-profile\fR property is used to specify which profile is to be
+selected by default when creating a new server. The default profile is only
+selected if the client does not specify a profile.
 .TP
 \fBserver\-time\fR=\fIhours\fR
 The \fBserver\-time\fR property specifies the default time\-limit (in hours) for any Minecraft server process. When the time expires, the minecontrol server will shutdown the Minecraft server. The user may override this property if they specify it. The default
