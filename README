@@ -1,4 +1,4 @@
-minecontrol - v1.3.0
+minecontrol - v1.4.0
 --------------------------------------------------------------------------------
 A. Overview
 
@@ -30,6 +30,8 @@ processes.
 
 The root user is allowed to administer any running Minecraft servers, and they
 can shutdown the Minecontrol server as well remotely. Root users should not
+create servers as it would run Minecraft (and any authority programs) as root;
+this would be a bad practice.
 
 Minecraft servers are identified by unique names that correspond to the
 top-level directory in users' "minecraft" directories that contain the server
@@ -50,11 +52,12 @@ extend the running time for a server via the EXTEND protocol command.
 The Minecontrol server loads its own settings from the
 /etc/minecontrold/minecontrol.init file. This file provides settings that the
 Minecontrol server loads each time it starts a new Minecraft server. These
-settings include options such as the command-line used to invoke the Java JVM,
-maximum allowed servers at a time, default timeout for server processes, default
-server.properties settings to apply or override, ETC. This file may be modified
-at any point while a minecontrol server is running as the server reads the file
-each time it begins a new Minecraft server process.
+settings include options such as the Java JVM path, command-line profiles to
+support multiple versions of Minecraft, the maximum allowed servers at a time,
+default timeout for server processes, default server.properties settings to
+apply or override, ETC. This file may be modified at any point while a
+minecontrol server is running as the server reads the file each time it begins a
+new Minecraft server process.
 
 Finally, the Minecontrol server provides a feature for extending the
 functionality of Minecraft worlds by wrapping the server console. This component
@@ -169,7 +172,7 @@ Several repositories exist that contain useful/fun authority programs:
 --------------------------------------------------------------------------------
 E. Desiderata
 
-Copyright 2014-2017 Roger Gee.  License GPLv3+: GNU GPL version 3 or later;
+Copyright 2014-2018 Roger Gee.  License GPLv3+: GNU GPL version 3 or later;
   consult <http://gnu.org/licenses/gpl.html>.
 Minecontrol is free software: you are free to change and redistribute it.
 There is NO WARRANTY and NO SUPPORT to the extent permitted by law.
