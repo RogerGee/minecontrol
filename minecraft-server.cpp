@@ -423,7 +423,7 @@ void minecraft_server_init_manager::apply_properties(minecraft_server_info& info
 /*static*/ mutex minecraft_server::_idSetProtect;
 /*static*/ short minecraft_server::_handlerRef = 0;
 /*static*/ uint64 minecraft_server::_alarmTick = 0;
-/*static*/ minecraft_server_init_manager minecraft_server::_globals;
+/*static*/ minecraft_server_init_manager minecraft_server::_initManager;
 
 minecraft_server::minecraft_server()
 {
@@ -453,7 +453,7 @@ minecraft_server::minecraft_server()
     _fderr = -1;
     _propsFileIsDirty = false;
     // reload global settings in case they have changed
-    _globals.read_from_file();
+    _initManager.read_from_file();
 }
 
 minecraft_server::~minecraft_server()
@@ -478,7 +478,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     pid_t pid;
     char* javaArgs;
     path mcraftdir;
-    const str& altHome = _globals.alternate_home();
+    const str& altHome = _initManager.alternate_home();
 
     // Figure out the path to the minecraft server.
     if (altHome.length() > 0) {
@@ -522,7 +522,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     // options are applied.
     _serverDir = mcraftdir;
     _internalName = info.internalName;
-    _maxTime = _globals.server_time();
+    _maxTime = _initManager.server_time();
 
     // create or open existing error file; we'll send child process error output
     // here; we need the descriptor in the parent process so we'll have to
@@ -544,12 +544,12 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     // available. The loaded profile can either be specified in the extended
     // options or in the minecontrol properties file.
     if (_profileName.length() == 0) {
-        _profileName = _globals.default_profile();
+        _profileName = _initManager.default_profile();
         _propsFileIsDirty = true;
     }
 
     // Lookup server arguments from profile.
-    javaArgs = _globals.arguments(_profileName.c_str());
+    javaArgs = _initManager.arguments(_profileName.c_str());
     if (javaArgs == nullptr) {
         if (_profileName.length() == 0) {
             return mcraft_start_server_no_default_profile;
@@ -563,7 +563,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     pid = ::fork();
     if (pid == 0) { // child
         // check server limit before proceeding
-        if (_idSet.size()+1 > size_type(_globals.max_servers()))
+        if (_idSet.size()+1 > size_type(_initManager.max_servers()))
             _exit((int)mcraft_start_server_too_many_servers);
 
         // setup the environment for the minecraft server:
@@ -604,7 +604,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         int top = 0;
         char* pstr = javaArgs;
         char* args[128];
-        args[top++] = _globals.exec();
+        args[top++] = _initManager.exec();
         while (top+1 < 128) {
             args[top++] = pstr;
             while (*pstr) {
@@ -632,7 +632,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
             ::close(fd);
 
         // execute program
-        if (::execve(_globals.exec(),args,environ) == -1)
+        if (::execve(_initManager.exec(),args,environ) == -1)
             _exit((int)mcraft_start_server_process_fail);
 
         // (control does not exist in this program anymore)
@@ -878,7 +878,7 @@ bool minecraft_server::_create_server_properties_file(minecraft_server_info& inf
         return false;
     file_stream fstream(props);
     // apply default and/or override properties
-    _globals.apply_properties(info);
+    _initManager.apply_properties(info);
     // write props to properties file
     info.get_props().write(fstream);
     return true;
