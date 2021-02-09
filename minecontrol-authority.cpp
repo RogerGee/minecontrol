@@ -364,8 +364,10 @@ minecontrol_authority::minecontrol_authority(const pipe& ioChannel,int fderr,con
     : _iochannel(ioChannel), _fderr(fderr), _serverDirectory(serverDirectory), _login(userInfo)
 {
     _childCnt = 0;
-    for (int i = 0;i < ALLOWED_CHILDREN;++i)
+    for (int i = 0;i < ALLOWED_CHILDREN;++i) {
         _childID[i] = -1;
+        _childSentVersion[i] = false;
+    }
     _trun = true;
     _consoleEnabled = true;
     _threadCondition = true;
@@ -625,6 +627,7 @@ minecontrol_authority::execute_result minecontrol_authority::run_auth_process(st
         // we are good to go (the child process survived long enough to enter processing mode)
         ++_childCnt;
         _childID[index] = pid;
+        write_version_to_child(index);
         _childMtx.unlock();
     }
     return result==pid ? authority_exec_okay_exited : authority_exec_okay;
@@ -642,6 +645,7 @@ bool minecontrol_authority::stop_auth_process(int32 pid)
             // control to other threads that may need to send messages
             _childStdIn[i].close();
             _childID[i] = -1;
+            _childSentVersion[i] = false;
             _childMtx.unlock();
             // let's give 30 seconds for the child to terminate
             int result;
@@ -656,10 +660,17 @@ bool minecontrol_authority::stop_auth_process(int32 pid)
             if (result != pid) {
                 kill(pid,SIGKILL);
                 waitpid(pid,NULL,0);
-                minecontrold::standardLog << "Authority process with PID=" << pid << " was forcefully killed by user request" << endline;
+                minecontrold::standardLog << "Authority process with PID="
+                                          << pid
+                                          << " was forcefully killed by user request"
+                                          << endline;
             }
-            else
-                minecontrold::standardLog << "Authority process with PID=" << pid << " was cleanly terminated by user request" << endline;
+            else {
+                minecontrold::standardLog << "Authority process with PID="
+                                          << pid
+                                          << " was cleanly terminated by user request"
+                                          << endline;
+            }
             return true;
         }
     }
@@ -673,6 +684,70 @@ void minecontrol_authority::get_auth_processes(dynamic_array<int32>& pidlist) co
         if (_childID[i] != -1)
             pidlist.push_back(_childID[i]);
     }
+    _childMtx.unlock();
+}
+void minecontrol_authority::process_message(const minecraft_server_message* message)
+{
+    // Process version from server_start message.
+    if (message->good()
+        && _serverVersion.size() == 0
+        && message->get_gist() == gist_server_start)
+    {
+        _serverVersion = message->get_token(0);
+    }
+
+    // if there are any child programs running, send a parsed version of the
+    // message to them on their stdin; also check the status of the running
+    // process for termination
+
+    _childMtx.lock();
+
+    if (_childCnt > 0 && message->good()) {
+        int status;
+
+        /* prepare a simple message to send to any child programs; this
+           message is already parsed so that the client doesn't have to deal
+           with too much complexity with the Minecraft server output; each
+           token in the message is separated by whitespace */
+        stringstream ss;
+        ss << message->get_gist_string();
+        for (size_type i = 0;i < message->get_token_count();++i) {
+            ss << ' ' << message->get_token(i);
+        }
+        ss << newline;
+        for (int i = 0;i < ALLOWED_CHILDREN;++i) {
+            if (_childID[i] == -1) {
+                continue;
+            }
+
+            // Don't resend start if we already sent it.
+            if (_childSentVersion[i] && message->get_gist() == gist_server_start) {
+                continue;
+            }
+
+            if ( _childStdIn[i].is_valid_output() ) {
+                // send parsed message to child process (this pipe write
+                // may fail if the child isn't reading our messages)
+                _childStdIn[i].write(ss.get_device());
+            }
+
+            // wait poll any child process so that they can be reaped as
+            // soon as possible; I don't like the idea of a zombie
+            // apocalypse happening (at least at the moment)
+            if (waitpid(_childID[i],&status,WNOHANG) == _childID[i]) {
+                _childStdIn[i].close();
+                _childID[i] = -1;
+                --_childCnt;
+            }
+
+            // Attempt version send to auth prog. This only sends if it hasn't received
+            // the version already.
+            else if (_serverVersion.size() > 0) {
+                write_version_to_child(i);
+            }
+        }
+    }
+
     _childMtx.unlock();
 }
 bool minecontrol_authority::is_responsive() const
@@ -694,7 +769,7 @@ bool minecontrol_authority::is_responsive() const
     return false;
 #endif
 }
-void* minecontrol_authority::processing(void* pparam)
+/*static*/ void* minecontrol_authority::processing(void* pparam)
 {
     static const size_type BUF_SIZE = 4096;
     minecontrol_authority* object = reinterpret_cast<minecontrol_authority*>(pparam);
@@ -729,10 +804,11 @@ void* minecontrol_authority::processing(void* pparam)
         // go through the bytes received from the Minecraft server; find complete
         // messages and process them
         while (true) {
+            // read until null terminator or endline 
             size_type msglen = 0;
-            // read until null terminator or endline
-            while (msg[msglen] && msg[msglen]!='\n')
+            while (msg[msglen] && msg[msglen]!='\n') {
                 ++msglen;
+            }
             if (msg[msglen] == 0) {
                 if (msglen < BUF_SIZE) {
                     if (msglen > 0) {
@@ -743,14 +819,16 @@ void* minecontrol_authority::processing(void* pparam)
                             msgbuf[i] = msg[i];
                         readloc = msglen;
                     }
-                    else
+                    else {
                         readloc = 0;
+                    }
                     break;
                 }
                 // 'msglen' is equal to 'BUF_SIZE'; consider this a complete message
                 // since we've run out of buffer space
             }
             msg[msglen] = 0;
+
             // if clients are registered with the authority, send the message as is
             object->_clientMtx.lock();
             for (size_type i = 0;i < object->_clientchannels.size();++i) {
@@ -763,52 +841,25 @@ void* minecontrol_authority::processing(void* pparam)
                 }
             }
             object->_clientMtx.unlock();
-            // if there are any child programs running, send a parsed version of the
-            // message to them on their stdin; also check the status of the running
-            // process for termination
-            object->_childMtx.lock();
-            if (object->_childCnt > 0) {
-                int status;
-                minecraft_server_message* pmessage;
-                pmessage = minecraft_server_message::generate_message(msg);
-                if (pmessage!=NULL && pmessage->good()) {
-                    /* prepare a simple message to send to any child programs; this message
-                       is already parsed so that the client doesn't have to deal with too much
-                       complexity with the Minecraft server output; each token in the message is
-                       separated by whitespace */
-                    stringstream ss;
-                    ss << pmessage->get_gist_string();
-                    for (size_type i = 0;i < pmessage->get_token_count();++i)
-                        ss << ' ' << pmessage->get_token(i);
-                    ss << newline;
-                    for (int i = 0;i < ALLOWED_CHILDREN;++i) {
-                        if (object->_childID[i] != -1) {
-                            if ( object->_childStdIn[i].is_valid_output() )
-                                // send parsed message to child process (this pipe write may fail if the child isn't reading our messages)
-                                object->_childStdIn[i].write(ss.get_device());
-                            // wait poll any child process so that they can be reaped as soon as possible; I don't
-                            // like the idea of a zombie apocalypse happening (at least at the moment)
-                            if (waitpid(object->_childID[i],&status,WNOHANG) == object->_childID[i]) {
-                                object->_childStdIn[i].close();
-                                object->_childID[i] = -1;
-                                --object->_childCnt;
-                            }
-                        }
-                    }
-                }
-                if (pmessage != NULL)
-                    delete pmessage;
+
+            minecraft_server_message* pmessage;
+            pmessage = minecraft_server_message::generate_message(msg);
+            if (pmessage != NULL) {
+                object->process_message(pmessage);
+                delete pmessage;
             }
-            object->_childMtx.unlock();
+
             // update 'msg' to point to start of next message (if any)
             msg += msglen + 1;
         }
     }
+
     // disable clients from plugging in and also disable new executable programs
     // from being started by remote clients
     object->_consoleEnabled = false;
-    object->_childMtx.lock();
+
     // wait for children to shutdown; give 10 seconds for termination else send kill signal
+    object->_childMtx.lock();
     for (int i = 0;i < ALLOWED_CHILDREN;++i) {
         if (object->_childID[i] != -1) {
             pid_t result;
@@ -826,15 +877,43 @@ void* minecontrol_authority::processing(void* pparam)
             if (result != object->_childID[i]) {
                 kill(object->_childID[i],SIGKILL);
                 waitpid(object->_childID[i],NULL,0);
-                minecontrold::standardLog << "Authority process with PID=" << object->_childID[i] << " was forcefully killed on authority shutdown" << endline;
+                minecontrold::standardLog << "Authority process with PID="
+                                          << object->_childID[i]
+                                          << " was forcefully killed on authority shutdown"
+                                          << endline;
             }
-            else
-                minecontrold::standardLog << "Authority process with PID=" << result << " was cleanly terminated on authority shutdown" << endline;
+            else {
+                minecontrold::standardLog << "Authority process with PID="
+                                          << result
+                                          << " was cleanly terminated on authority shutdown"
+                                          << endline;
+            }
             object->_childID[i] = -1;
         }
     }
     object->_childMtx.unlock();
+
     return NULL;
+}
+void minecontrol_authority::write_version_to_child(int index)
+{
+    stringstream message;
+    pipe& output = _childStdIn[index];
+    bool& sentVersion = _childSentVersion[index];
+
+    if (_serverVersion.size() == 0 || sentVersion) {
+        return;
+    }
+
+    // Send version as "start" command.
+    message << "start "
+            << _serverVersion
+            << endline;
+
+    if (output.is_valid_output()) {
+        output.write(message.get_device());
+        sentVersion = true;
+    }
 }
 /*static*/ bool minecontrol_authority::_prepareArgs(char* commandLine,const char** outProgram,const char** outArgv,int size)
 {

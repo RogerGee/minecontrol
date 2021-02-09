@@ -640,23 +640,6 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     else if (pid != -1) {
         _iochannel.close_open(); // close open ends of pipe
 
-        // wait for the child process to put data on the pipe;
-        // this will be our signal that the process started up properly
-        char message[5];
-        _iochannel.read(message,1); // just read one byte so as to not interfere too much with our future snooping
-        if (_iochannel.get_last_operation_status()==no_input // child wasn't able to start properly
-            || _iochannel.get_last_operation_status()==bad_read) {
-            // close the pipe, close the error file, and reap the child process
-            int wstatus;
-            _iochannel.close();
-            _close_error_file();
-            if (::waitpid(pid,&wstatus,0) != pid) // this should happen sooner rather than never...
-                throw minecraft_server_error();
-            if ( WIFEXITED(wstatus) )
-                return (minecraft_server_start_condition)WEXITSTATUS(wstatus);
-            return mcraft_start_failure_unknown;
-        }
-
         // initialize the authority which will manage the minecraft server
         _authority = new minecontrol_authority(_iochannel,_fderr,mcraftdir.get_full_name(),info.userInfo);
 

@@ -152,6 +152,7 @@ namespace minecraft_controller
         execute_result run_auth_process(rtypes::str commandLine,int* ppid = NULL);
         bool stop_auth_process(rtypes::int32 pid);
         void get_auth_processes(rtypes::dynamic_array<rtypes::int32>& pidlist) const;
+        void process_message(const minecraft_server_message* message);
 
         bool is_responsive() const; // determine if server process is still responsive
 
@@ -165,13 +166,17 @@ namespace minecraft_controller
         static const int ALLOWED_CHILDREN = 10;
         static void* processing(void*); // thread handler for message processing/message output to logged-in client or child processes
 
+        void write_version_to_child(int index);
+
         pipe _iochannel; // IO channel to Minecraft server Java process (read/write enabled)
         int _fderr; /* file descriptor for authority programs' stderr; assume it stays valid throughout the lifetime of the object */
         rtypes::str _serverDirectory; // directory of server files that the authority manages; becomes the current working directory for the child authority process
         user_info _login; // login information for user running minecraft server
+        rtypes::str _serverVersion; // version string captured from log
         rtypes::dynamic_array<socket*> _clientchannels; // sockets used for client communications using minecontrol protocol; empty if no clients registered
         pipe _childStdIn[ALLOWED_CHILDREN]; // write-only pipe (in parent) to child stdin
         rtypes::int32 _childID[ALLOWED_CHILDREN]; // parallel array of child process ids
+        bool _childSentVersion[ALLOWED_CHILDREN]; // parallel array of version sent flags
         int _childCnt; // maintain a count of child processes (for convenience)
         mutable mutex _childMtx, _clientMtx; // control cross-thread access
         mutable bool _trun;
