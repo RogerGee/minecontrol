@@ -328,14 +328,12 @@ list_authority_programs(rtypes::dynamic_array<str>& out,const user_info& userInf
         DIR* dir = opendir(path.c_str());
 
         if (dir != nullptr) {
-            struct dirent ent;
-
             while (true) {
                 struct stat st;
                 struct dirent* result;
-                int r = readdir_r(dir,&ent,&result);
+                result = readdir(dir);
 
-                if (r != 0 || result == nullptr) {
+                if (result == nullptr) {
                     break;
                 }
                 if (result->d_type != DT_REG && result->d_type != DT_LNK) {

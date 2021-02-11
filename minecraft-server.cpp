@@ -389,14 +389,12 @@ void minecraft_server_init_manager::apply_properties(minecraft_server_info& info
     DIR* dir = opendir(mcraftdir.c_str());
 
     if (dir != nullptr) {
-        struct dirent ent;
-
         while (true) {
             struct stat st;
             struct dirent* result;
-            int r = readdir_r(dir,&ent,&result);
+            result = readdir(dir);
 
-            if (r != 0 || result == nullptr) {
+            if (result == nullptr) {
                 break;
             }
 
