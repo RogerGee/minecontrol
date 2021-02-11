@@ -454,7 +454,7 @@ minecraft_server::minecraft_server()
     _initManager.read_from_file();
 }
 
-minecraft_server::~minecraft_server()
+minecraft_server::~minecraft_server() noexcept(false)
 {
     this->end();
     // unset the alarm system if the last server

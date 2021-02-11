@@ -144,7 +144,7 @@ namespace minecraft_controller
 
 
         minecontrol_authority(const pipe& ioChannel,int fderr,const rtypes::str& serverDirectory,const user_info& login);
-        ~minecontrol_authority();
+        ~minecontrol_authority() noexcept(false);
 
         console_result client_console_operation(socket& clientChannel); // blocks
         void issue_command(const rtypes::str& commandLine);

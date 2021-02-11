@@ -175,7 +175,7 @@ namespace minecraft_controller
         };
 
         minecraft_server();
-        ~minecraft_server();
+        ~minecraft_server() noexcept(false);
 
         // spawns a child process that executes the minecraft
         // server Java binary

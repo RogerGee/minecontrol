@@ -397,7 +397,7 @@ minecontrol_authority::minecontrol_authority(const pipe& ioChannel,int fderr,con
     if (pthread_create(&_threadID,NULL,&minecontrol_authority::processing,this) != 0)
         throw minecontrol_authority_error();
 }
-minecontrol_authority::~minecontrol_authority()
+minecontrol_authority::~minecontrol_authority() noexcept(false)
 {
     // join back up with the processing thread
     _threadCondition = false;
