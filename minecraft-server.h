@@ -175,7 +175,7 @@ namespace minecraft_controller
         };
 
         minecraft_server();
-        ~minecraft_server();
+        ~minecraft_server() noexcept(false);
 
         // spawns a child process that executes the minecraft
         // server Java binary
@@ -227,7 +227,7 @@ namespace minecraft_controller
         static void* _io_thread(void*);
 
         // global server settings (read from initialization file)
-        static minecraft_server_init_manager _globals; // global settings
+        static minecraft_server_init_manager _initManager; // global settings
 
         // per server attributes
         rtypes::str _internalName;

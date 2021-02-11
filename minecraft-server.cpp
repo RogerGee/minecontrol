@@ -389,14 +389,12 @@ void minecraft_server_init_manager::apply_properties(minecraft_server_info& info
     DIR* dir = opendir(mcraftdir.c_str());
 
     if (dir != nullptr) {
-        struct dirent ent;
-
         while (true) {
             struct stat st;
             struct dirent* result;
-            int r = readdir_r(dir,&ent,&result);
+            result = readdir(dir);
 
-            if (r != 0 || result == nullptr) {
+            if (result == nullptr) {
                 break;
             }
 
@@ -423,7 +421,7 @@ void minecraft_server_init_manager::apply_properties(minecraft_server_info& info
 /*static*/ mutex minecraft_server::_idSetProtect;
 /*static*/ short minecraft_server::_handlerRef = 0;
 /*static*/ uint64 minecraft_server::_alarmTick = 0;
-/*static*/ minecraft_server_init_manager minecraft_server::_globals;
+/*static*/ minecraft_server_init_manager minecraft_server::_initManager;
 
 minecraft_server::minecraft_server()
 {
@@ -453,10 +451,10 @@ minecraft_server::minecraft_server()
     _fderr = -1;
     _propsFileIsDirty = false;
     // reload global settings in case they have changed
-    _globals.read_from_file();
+    _initManager.read_from_file();
 }
 
-minecraft_server::~minecraft_server()
+minecraft_server::~minecraft_server() noexcept(false)
 {
     this->end();
     // unset the alarm system if the last server
@@ -478,7 +476,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     pid_t pid;
     char* javaArgs;
     path mcraftdir;
-    const str& altHome = _globals.alternate_home();
+    const str& altHome = _initManager.alternate_home();
 
     // Figure out the path to the minecraft server.
     if (altHome.length() > 0) {
@@ -522,7 +520,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     // options are applied.
     _serverDir = mcraftdir;
     _internalName = info.internalName;
-    _maxTime = _globals.server_time();
+    _maxTime = _initManager.server_time();
 
     // create or open existing error file; we'll send child process error output
     // here; we need the descriptor in the parent process so we'll have to
@@ -544,12 +542,12 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     // available. The loaded profile can either be specified in the extended
     // options or in the minecontrol properties file.
     if (_profileName.length() == 0) {
-        _profileName = _globals.default_profile();
+        _profileName = _initManager.default_profile();
         _propsFileIsDirty = true;
     }
 
     // Lookup server arguments from profile.
-    javaArgs = _globals.arguments(_profileName.c_str());
+    javaArgs = _initManager.arguments(_profileName.c_str());
     if (javaArgs == nullptr) {
         if (_profileName.length() == 0) {
             return mcraft_start_server_no_default_profile;
@@ -563,7 +561,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
     pid = ::fork();
     if (pid == 0) { // child
         // check server limit before proceeding
-        if (_idSet.size()+1 > size_type(_globals.max_servers()))
+        if (_idSet.size()+1 > size_type(_initManager.max_servers()))
             _exit((int)mcraft_start_server_too_many_servers);
 
         // setup the environment for the minecraft server:
@@ -604,7 +602,7 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
         int top = 0;
         char* pstr = javaArgs;
         char* args[128];
-        args[top++] = _globals.exec();
+        args[top++] = _initManager.exec();
         while (top+1 < 128) {
             args[top++] = pstr;
             while (*pstr) {
@@ -632,30 +630,13 @@ minecraft_server::minecraft_server_start_condition minecraft_server::begin(minec
             ::close(fd);
 
         // execute program
-        if (::execve(_globals.exec(),args,environ) == -1)
+        if (::execve(_initManager.exec(),args,environ) == -1)
             _exit((int)mcraft_start_server_process_fail);
 
         // (control does not exist in this program anymore)
     }
     else if (pid != -1) {
         _iochannel.close_open(); // close open ends of pipe
-
-        // wait for the child process to put data on the pipe;
-        // this will be our signal that the process started up properly
-        char message[5];
-        _iochannel.read(message,1); // just read one byte so as to not interfere too much with our future snooping
-        if (_iochannel.get_last_operation_status()==no_input // child wasn't able to start properly
-            || _iochannel.get_last_operation_status()==bad_read) {
-            // close the pipe, close the error file, and reap the child process
-            int wstatus;
-            _iochannel.close();
-            _close_error_file();
-            if (::waitpid(pid,&wstatus,0) != pid) // this should happen sooner rather than never...
-                throw minecraft_server_error();
-            if ( WIFEXITED(wstatus) )
-                return (minecraft_server_start_condition)WEXITSTATUS(wstatus);
-            return mcraft_start_failure_unknown;
-        }
 
         // initialize the authority which will manage the minecraft server
         _authority = new minecontrol_authority(_iochannel,_fderr,mcraftdir.get_full_name(),info.userInfo);
@@ -878,7 +859,7 @@ bool minecraft_server::_create_server_properties_file(minecraft_server_info& inf
         return false;
     file_stream fstream(props);
     // apply default and/or override properties
-    _globals.apply_properties(info);
+    _initManager.apply_properties(info);
     // write props to properties file
     info.get_props().write(fstream);
     return true;

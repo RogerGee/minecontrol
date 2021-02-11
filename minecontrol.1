@@ -53,6 +53,10 @@ the server will run for unlimited time.
 ServerExec=command\-line:
 Specifies a command\-line to append to the \fBminecontrol.exec\fR(5) file. This command\-line will be executed by the minecontrol
 server as an authority program once the Minecraft server is running.
+.IP \-
+Profile=profile\-name:
+Specifies a profile to use for the new server.
+
 .RE
 .RS
 The \fBstart\fR command requires that the client be authenticated using the \fBlogin\fR command.
@@ -213,8 +217,14 @@ rules for path names apply
 [\fBServerTime: \fIhours\fR]
 Specify server time limit in hours (optional)
 .TP
+[\fBServerExec: \fIcmd\fR...]
+Specify authority program execution (optional); each command is separated by a \fB:\fR character.
+.TP
+[\fBProfile: \fIprofile-name\fR]
+Specify the named profile to use for the new server (optional).
+.TP
 [\fIserver\-property\-name\fB: \fIserver\-property\-value\fR]
-Specify a Minecraft server property for the server.properties file (optional)
+Specify a Minecraft server property for the server.properties file (optional).
 .RE
 .TP
 .B STATUS

@@ -3,6 +3,13 @@ AC_INIT([minecontrol],[1.4.0],[])
 AM_INIT_AUTOMAKE([foreign -Wall -Werror])
 AC_PROG_CXX
 
+dnl Configure MINECONTROL_TEST if enabled.
+AC_ARG_ENABLE([testing],
+    AS_HELP_STRING([--enable-testing], [Enable testing functionality]))
+AS_IF([test "x$enable_testing" = "xyes"], [
+    AC_DEFINE([MINECONTROL_TEST],["1"],[Build binary for testing])
+])
+
 dnl rlibrary is a C++ library: just check a header since most if not all of
 dnl  its exports are C++ routines.
 AC_CHECK_HEADER(rlibrary/rstream.h)
