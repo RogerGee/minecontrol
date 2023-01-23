@@ -71,7 +71,7 @@ Minecontrol was built for GNU/Linux systems. You will need a C++ compiler with
 at least C++11 support to build this project. You will also need several
 external library dependencies. The configure scripts will make sure the
 dependencies are installed properly on your system. To generate the scripts, run
-"buildconf.sh".
+"autoreconf -i .".
 
 Now you should be able to configure and build in the normal way:
 
@@ -82,7 +82,7 @@ The following dependencies are required to build:
 
     OpenSSL
     ncurses
-    rlibrary (see https://git.rserver.us/support/rlibrary.git)
+    rlibrary (see https://git.rserver.us/libs/rlibrary.git)
 
 --------------------------------------------------------------------------------
 C. Installation and usage
@@ -172,7 +172,7 @@ Several repositories exist that contain useful/fun authority programs:
 --------------------------------------------------------------------------------
 E. Desiderata
 
-Copyright 2014-2018 Roger Gee.  License GPLv3+: GNU GPL version 3 or later;
+Copyright 2014-2021 Roger Gee.  License GPLv3+: GNU GPL version 3 or later;
   consult <http://gnu.org/licenses/gpl.html>.
 Minecontrol is free software: you are free to change and redistribute it.
 There is NO WARRANTY and NO SUPPORT to the extent permitted by law.

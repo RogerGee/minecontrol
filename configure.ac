@@ -1,5 +1,5 @@
 AC_PREREQ(2.69)
-AC_INIT([minecontrol],[1.4.0],[])
+AC_INIT([minecontrol],[1.6.0-dev],[])
 AM_INIT_AUTOMAKE([foreign -Wall -Werror])
 AC_PROG_CXX
 
