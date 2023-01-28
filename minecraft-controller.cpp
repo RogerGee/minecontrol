@@ -36,11 +36,13 @@ static const char* const SERVICE_PORT = "44446";
 
 static constexpr char OPTION_VERSION = 'v';
 static constexpr char OPTION_HELP = 'h';
+static constexpr char OPTION_NODAEMON = 'n';
 
 static const char* const SHORT_OPTS = "";
 static const struct option LONG_OPTS[] = {
     { "version", no_argument, nullptr, OPTION_VERSION },
     { "help", no_argument, nullptr, OPTION_HELP },
+    { "no-daemon", no_argument, nullptr, OPTION_NODAEMON },
     { 0, 0, 0, 0 }
 };
 
@@ -65,6 +67,7 @@ int main(int argc,char** argv)
 {
     bool version = false;
     bool help = false;
+    bool nodaemon = false;
 
     while (true) {
         int optionIndex;
@@ -80,6 +83,9 @@ int main(int argc,char** argv)
             break;
         case 'h':
             help = true;
+            break;
+        case 'n':
+            nodaemon = true;
             break;
         }
     }
@@ -100,8 +106,10 @@ int main(int argc,char** argv)
     if (::signal(SIGPIPE,SIG_IGN) == SIG_ERR)
         fatal_error("cannot set disposition for signal SIGPIPE");
 
-    // become a daemon (first so umask is reset before we create sockets)
-    daemonize();
+    if (!nodaemon) {
+        // become a daemon (first so umask is reset before we create sockets)
+        daemonize();
+    }
 
     // attempt to bind server sockets
     create_server_sockets();
@@ -142,24 +150,14 @@ void print_help()
                << newline
                <<
         "Options:\n"
-        "  --version  Print version information\n"
-        "  --help     Print this message\n"
+        "  --version    Print version information\n"
+        "  --help       Print this message\n"
+        "  --no-daemon  Do not become a daemon\n"
         "\n"
         "See man minecontrold(1) for more notes.\n"
         "Report bugs (kindly!) to Roger Gee <rpg11a@acu.edu>.\n";
 
     exit(EXIT_SUCCESS);
-}
-
-bool process_long_option(const char* option)
-{
-    if ( rutil_strcmp(option,"version") ) {
-        return true;
-    }
-    else if ( rutil_strcmp(option,"help") ) {
-        return true;
-    }
-    return false;
 }
 
 void daemonize()
