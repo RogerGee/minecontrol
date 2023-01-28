@@ -16,6 +16,7 @@
 #include <pthread.h>
 #include <errno.h>
 #include <string.h>
+#include <getopt.h>
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -31,6 +32,20 @@ static const char* const LOG_FILE = "minecontrol.log"; // relative to current wo
 static const char* const DOMAIN_NAME = "@minecontrol";
 static const char* const SERVICE_PORT = "44446";
 
+// arguments
+
+static constexpr char OPTION_VERSION = 'v';
+static constexpr char OPTION_HELP = 'h';
+static constexpr char OPTION_NODAEMON = 'n';
+
+static const char* const SHORT_OPTS = "";
+static const struct option LONG_OPTS[] = {
+    { "version", no_argument, nullptr, OPTION_VERSION },
+    { "help", no_argument, nullptr, OPTION_HELP },
+    { "no-daemon", no_argument, nullptr, OPTION_NODAEMON },
+    { 0, 0, 0, 0 }
+};
+
 // globals
 static domain_socket local;
 static network_socket remote;
@@ -39,8 +54,8 @@ static network_socket remote;
 class minecraft_controller_error { };
 
 // functions
-static bool process_short_option(const char* option);
-static bool process_long_option(const char* option);
+static void print_version();
+static void print_help();
 static void daemonize(); // turns this process into a daemon
 static void shutdown_handler(int); // recieves signals from system for server shutdown
 static void create_server_sockets(); // creates server sockets
@@ -48,20 +63,41 @@ static void local_operation(); // accepts local connections; manages the thread 
 static void* remote_operation(void*); // started on a new thread by local_operation; accepts remote connections
 static void fatal_error(const char* message); // exits the calling process after showing error message on STDERR
 
-int main(int argc,const char* argv[])
+int main(int argc,char** argv)
 {
-    if (argc > 1) {
-        for (int i = 1;i < argc;++i) {
-            if (argv[i][0] == '-') {
-                if (argv[i][1] == '-') {
-                    if ( process_long_option(argv[i]+2) )
-                        return 0;
-                }
-                else if ( process_short_option(argv[i]+1) )
-                    return 0;
-            }
+    bool version = false;
+    bool help = false;
+    bool nodaemon = false;
+
+    while (true) {
+        int optionIndex;
+        int c = getopt_long(argc,argv,SHORT_OPTS,LONG_OPTS,&optionIndex);
+
+        if (c == -1) {
+            break;
+        }
+
+        switch (c) {
+        case 'v':
+            version = true;
+            break;
+        case 'h':
+            help = true;
+            break;
+        case 'n':
+            nodaemon = true;
+            break;
         }
     }
+
+    if (version) {
+        print_version();
+    }
+
+    if (help) {
+        print_help();
+    }
+
     // set up signal handler for TERM and INT events
     if (::signal(SIGTERM,&shutdown_handler) == SIG_ERR)
         fatal_error("cannot create signal handler for SIGTERM");
@@ -69,96 +105,129 @@ int main(int argc,const char* argv[])
         fatal_error("cannot create signal handler for SIGINT");
     if (::signal(SIGPIPE,SIG_IGN) == SIG_ERR)
         fatal_error("cannot set disposition for signal SIGPIPE");
-    // become a daemon (first so umask is reset before we create sockets)
-    daemonize();
+
+    if (!nodaemon) {
+        // become a daemon (first so umask is reset before we create sockets)
+        daemonize();
+    }
+
     // attempt to bind server sockets
     create_server_sockets();
+
     // log process start
     minecontrold::standardLog << "process started" << endline;
+
     // perform startup operations
     minecraft_server_manager::startup_server_manager();
+
     // begin local server operation
     local_operation();
+
     // perform shutdown operations
     controller_client::shutdown_clients();
     minecraft_server_manager::shutdown_server_manager();
+
     // log process completion
     minecontrold::standardLog << "process complete" << endline;
+
     return 0;
 }
 
-bool process_short_option(const char*)
+void print_version()
 {
-    return false;
+    stdConsole << minecontrold::get_server_name() << ' ' << minecontrold::get_server_version()
+               << newline
+               << newline
+               << "Report bugs (kindly!) to Roger Gee <rpg11a@acu.edu>.\n";
+
+    exit(EXIT_SUCCESS);
 }
 
-bool process_long_option(const char* option)
+void print_help()
 {
-    if ( rutil_strcmp(option,"version") ) {
-        stdConsole << minecontrold::get_server_name() << ' ' << minecontrold::get_server_version() << newline << newline
-                   << "Report bugs (kindly!) to Roger Gee <rpg11a@acu.edu>.\n";
-        return true;
-    }
-    else if ( rutil_strcmp(option,"help") ) {
-        stdConsole << minecontrold::get_server_name() << ' ' << minecontrold::get_server_version() << newline << newline
-                   << "Options:\n\t--version\n\t--help\n\nSee man minecontrold(1) for a whole lot more.\nReport bugs (kindly!) to Roger Gee <rpg11a@acu.edu>.\n";
-        return true;
-    }
-    return false;
+    stdConsole << minecontrold::get_server_name() << ' ' << minecontrold::get_server_version()
+               << newline
+               << newline
+               <<
+        "Options:\n"
+        "  --version    Print version information\n"
+        "  --help       Print this message\n"
+        "  --no-daemon  Do not become a daemon\n"
+        "\n"
+        "See man minecontrold(1) for more notes.\n"
+        "Report bugs (kindly!) to Roger Gee <rpg11a@acu.edu>.\n";
+
+    exit(EXIT_SUCCESS);
 }
 
 void daemonize()
 {
-#ifdef MINECONTROL_TEST
-    return; // don't become a daemon for testing
-#endif
     // let's become a daemon
     pid_t pid = ::fork();
     if (pid == -1) {
         minecontrold::standardLog << "fatal: cannot fork a child process" << endline;
         ::_exit(1);
     }
+
     if (pid == 0) { // child process stays alive
         // become the leader of a new session and process group; this
         // removes the controlling terminal from the process group
         if (::setsid() == -1)
             fatal_error("cannot become leader of new session");
+
         // reset umask
         ::umask(0);
+
+#ifndef MINECONTROL_TEST
         // attempt to create minecontrold init-dir if it does not already exist
         struct stat stbuf;
         if (stat(INIT_DIR,&stbuf) == -1) {
-            if (errno != ENOENT)
+            if (errno != ENOENT) {
                 fatal_error("cannot access file information for initial directory");
+            }
             if (mkdir(INIT_DIR,S_IRWXU) == -1) {
-                if (errno == EACCES)
+                if (errno == EACCES) {
                     fatal_error("cannot create initial directory: access denied");
+                }
                 fatal_error("cannot create initial directory");
             }
         }
-        else if ( !S_ISDIR(stbuf.st_mode) )
+        else if ( !S_ISDIR(stbuf.st_mode) ) {
             fatal_error("initial directory exists as something other than a directory");
+        }
+
         // set working directory to minecontrold init-dir
         if (::chdir(INIT_DIR) == -1) {
             if (errno == EACCES)
                 fatal_error("cannot change current directory to needed initial directory: access denied");
             fatal_error("cannot change current directory to needed initial directory");
         }
+#endif
+
+        // Open log file and redirect to stdout and stderr. Redirect stdin to
+        // /dev/null.
+
         int fd, fdNull;
-        // duplicate:
-        //  log file to STDOUT and STDERR
-        //  null to STDIN
         fd = ::open(LOG_FILE,O_WRONLY|O_CREAT|O_APPEND,S_IRUSR|S_IWUSR);
         fdNull = ::open("/dev/null",O_RDWR);
+
         if (fd == -1) {
             if (errno == EACCES)
                 fatal_error("cannot open log file: permission denied: this process must be privileged");
             fatal_error("cannot open log file");
         }
-        if (fdNull == -1)
+
+        if (fdNull == -1) {
             fatal_error("cannot open null device");
-        if (::dup2(fdNull,STDIN_FILENO)!=STDIN_FILENO || ::dup2(fd,STDOUT_FILENO)!=STDOUT_FILENO || ::dup2(fd,STDERR_FILENO)!=STDERR_FILENO)
+        }
+
+        if (::dup2(fdNull,STDIN_FILENO) != STDIN_FILENO
+            || ::dup2(fd,STDOUT_FILENO)!=STDOUT_FILENO
+            || ::dup2(fd,STDERR_FILENO)!=STDERR_FILENO)
+        {
             fatal_error("cannot redirect standard IO to log file");
+        }
+
         ::close(fd);
         ::close(fdNull);
     }

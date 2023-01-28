@@ -2,6 +2,7 @@
 #include "minecraft-server.h"
 #include "minecraft-controller.h"
 #include <cstring>
+#include <stdexcept>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>

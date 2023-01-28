@@ -71,7 +71,7 @@ Minecontrol was built for GNU/Linux systems. You will need a C++ compiler with
 at least C++11 support to build this project. You will also need several
 external library dependencies. The configure scripts will make sure the
 dependencies are installed properly on your system. To generate the scripts, run
-"buildconf.sh".
+"autoreconf -i .".
 
 Now you should be able to configure and build in the normal way:
 
@@ -82,7 +82,7 @@ The following dependencies are required to build:
 
     OpenSSL
     ncurses
-    rlibrary (see https://git.rserver.us/support/rlibrary.git)
+    rlibrary (see https://git.rserver.us/libs/rlibrary.git)
 
 --------------------------------------------------------------------------------
 C. Installation and usage
@@ -91,10 +91,14 @@ To install the software, run "make install" in the usual way. This will install
 "minecontrol" to <PREFIX>/bin and "minecontrold" to <PREFIX>/sbin.
 
 When running "minecontrold" (i.e. the server program), you must run it as root
-so that it can verify user passwords. It will attempt to load the
-/etc/minecontrold/minecontrol.init file unless the software was built with
-MINECONTROL_TEST in which case the current directory is searched for
-minecontrol.init.
+so that it can verify user passwords. By default, the server will attempt to
+become a daemon (i.e. detach itself into a new session in the background.) To
+prevent this behavior (e.g. for testing or when running in a container), pass
+the --no-daemon flag.
+
+The server will attempt to load the /etc/minecontrold/minecontrol.init file
+unless the software was built with MINECONTROL_TEST in which case the current
+directory is searched for minecontrol.init.
 
 A server listens on a local domain socket as well as a TCP/IP socket. Use the
 "minecontrol" client program to connect. Without arguments, it attempts to
@@ -172,7 +176,7 @@ Several repositories exist that contain useful/fun authority programs:
 --------------------------------------------------------------------------------
 E. Desiderata
 
-Copyright 2014-2018 Roger Gee.  License GPLv3+: GNU GPL version 3 or later;
+Copyright 2014-2021 Roger Gee.  License GPLv3+: GNU GPL version 3 or later;
   consult <http://gnu.org/licenses/gpl.html>.
 Minecontrol is free software: you are free to change and redistribute it.
 There is NO WARRANTY and NO SUPPORT to the extent permitted by law.
