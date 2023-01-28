@@ -162,56 +162,72 @@ void print_help()
 
 void daemonize()
 {
-#ifdef MINECONTROL_TEST
-    return; // don't become a daemon for testing
-#endif
     // let's become a daemon
     pid_t pid = ::fork();
     if (pid == -1) {
         minecontrold::standardLog << "fatal: cannot fork a child process" << endline;
         ::_exit(1);
     }
+
     if (pid == 0) { // child process stays alive
         // become the leader of a new session and process group; this
         // removes the controlling terminal from the process group
         if (::setsid() == -1)
             fatal_error("cannot become leader of new session");
+
         // reset umask
         ::umask(0);
+
+#ifndef MINECONTROL_TEST
         // attempt to create minecontrold init-dir if it does not already exist
         struct stat stbuf;
         if (stat(INIT_DIR,&stbuf) == -1) {
-            if (errno != ENOENT)
+            if (errno != ENOENT) {
                 fatal_error("cannot access file information for initial directory");
+            }
             if (mkdir(INIT_DIR,S_IRWXU) == -1) {
-                if (errno == EACCES)
+                if (errno == EACCES) {
                     fatal_error("cannot create initial directory: access denied");
+                }
                 fatal_error("cannot create initial directory");
             }
         }
-        else if ( !S_ISDIR(stbuf.st_mode) )
+        else if ( !S_ISDIR(stbuf.st_mode) ) {
             fatal_error("initial directory exists as something other than a directory");
+        }
+
         // set working directory to minecontrold init-dir
         if (::chdir(INIT_DIR) == -1) {
             if (errno == EACCES)
                 fatal_error("cannot change current directory to needed initial directory: access denied");
             fatal_error("cannot change current directory to needed initial directory");
         }
+#endif
+
+        // Open log file and redirect to stdout and stderr. Redirect stdin to
+        // /dev/null.
+
         int fd, fdNull;
-        // duplicate:
-        //  log file to STDOUT and STDERR
-        //  null to STDIN
         fd = ::open(LOG_FILE,O_WRONLY|O_CREAT|O_APPEND,S_IRUSR|S_IWUSR);
         fdNull = ::open("/dev/null",O_RDWR);
+
         if (fd == -1) {
             if (errno == EACCES)
                 fatal_error("cannot open log file: permission denied: this process must be privileged");
             fatal_error("cannot open log file");
         }
-        if (fdNull == -1)
+
+        if (fdNull == -1) {
             fatal_error("cannot open null device");
-        if (::dup2(fdNull,STDIN_FILENO)!=STDIN_FILENO || ::dup2(fd,STDOUT_FILENO)!=STDOUT_FILENO || ::dup2(fd,STDERR_FILENO)!=STDERR_FILENO)
+        }
+
+        if (::dup2(fdNull,STDIN_FILENO) != STDIN_FILENO
+            || ::dup2(fd,STDOUT_FILENO)!=STDOUT_FILENO
+            || ::dup2(fd,STDERR_FILENO)!=STDERR_FILENO)
+        {
             fatal_error("cannot redirect standard IO to log file");
+        }
+
         ::close(fd);
         ::close(fdNull);
     }
