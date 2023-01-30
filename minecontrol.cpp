@@ -11,7 +11,7 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <termios.h>
-#include <ncurses/ncurses.h>
+#include <ncurses.h>
 using namespace rtypes;
 using namespace minecraft_controller;
 
