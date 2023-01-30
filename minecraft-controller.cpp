@@ -56,6 +56,7 @@ class minecraft_controller_error { };
 // functions
 static void print_version();
 static void print_help();
+static void changedir();
 static void daemonize(); // turns this process into a daemon
 static void shutdown_handler(int); // recieves signals from system for server shutdown
 static void create_server_sockets(); // creates server sockets
@@ -105,6 +106,10 @@ int main(int argc,char** argv)
         fatal_error("cannot create signal handler for SIGINT");
     if (::signal(SIGPIPE,SIG_IGN) == SIG_ERR)
         fatal_error("cannot set disposition for signal SIGPIPE");
+
+#ifndef MINECONTROL_TEST
+    changedir();
+#endif
 
     if (!nodaemon) {
         // become a daemon (first so umask is reset before we create sockets)
@@ -160,6 +165,33 @@ void print_help()
     exit(EXIT_SUCCESS);
 }
 
+void changedir()
+{
+    // attempt to create minecontrold init-dir if it does not already exist
+    struct stat stbuf;
+    if (stat(INIT_DIR,&stbuf) == -1) {
+        if (errno != ENOENT) {
+            fatal_error("cannot access file information for initial directory");
+        }
+        if (mkdir(INIT_DIR,S_IRWXU) == -1) {
+            if (errno == EACCES) {
+                fatal_error("cannot create initial directory: access denied");
+            }
+            fatal_error("cannot create initial directory");
+        }
+    }
+    else if ( !S_ISDIR(stbuf.st_mode) ) {
+        fatal_error("initial directory exists as something other than a directory");
+    }
+
+    // set working directory to minecontrold init-dir
+    if (::chdir(INIT_DIR) == -1) {
+        if (errno == EACCES)
+            fatal_error("cannot change current directory to needed initial directory: access denied");
+        fatal_error("cannot change current directory to needed initial directory");
+    }
+}
+
 void daemonize()
 {
     // let's become a daemon
@@ -177,32 +209,6 @@ void daemonize()
 
         // reset umask
         ::umask(0);
-
-#ifndef MINECONTROL_TEST
-        // attempt to create minecontrold init-dir if it does not already exist
-        struct stat stbuf;
-        if (stat(INIT_DIR,&stbuf) == -1) {
-            if (errno != ENOENT) {
-                fatal_error("cannot access file information for initial directory");
-            }
-            if (mkdir(INIT_DIR,S_IRWXU) == -1) {
-                if (errno == EACCES) {
-                    fatal_error("cannot create initial directory: access denied");
-                }
-                fatal_error("cannot create initial directory");
-            }
-        }
-        else if ( !S_ISDIR(stbuf.st_mode) ) {
-            fatal_error("initial directory exists as something other than a directory");
-        }
-
-        // set working directory to minecontrold init-dir
-        if (::chdir(INIT_DIR) == -1) {
-            if (errno == EACCES)
-                fatal_error("cannot change current directory to needed initial directory: access denied");
-            fatal_error("cannot change current directory to needed initial directory");
-        }
-#endif
 
         // Open log file and redirect to stdout and stderr. Redirect stdin to
         // /dev/null.
