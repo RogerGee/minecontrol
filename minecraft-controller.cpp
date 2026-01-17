@@ -17,6 +17,8 @@
 #include <errno.h>
 #include <string.h>
 #include <getopt.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -115,6 +117,11 @@ int main(int argc,char** argv)
         // become a daemon (first so umask is reset before we create sockets)
         daemonize();
     }
+
+    // initialize openssl
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
 
     // attempt to bind server sockets
     create_server_sockets();
@@ -254,15 +261,20 @@ void create_server_sockets()
 {
     domain_socket_address domainAddress(DOMAIN_NAME);
     network_socket_address networkAddress(NULL,SERVICE_PORT);
+    networkAddress.setEncrypted(true);
+
     // create domain socket
     if ( !local.open() )
         fatal_error("cannot create domain socket server");
+
     // create network socket
     if ( !remote.open() )
         fatal_error("cannot create network socket server");
+
     // attempt to bind the domain socket server
     if ( !local.bind(domainAddress) )
         fatal_error("cannot bind domain socket server to path");
+
     // attempt to bind the network socket server
     if ( !remote.bind(networkAddress) )
         fatal_error("cannot bind network socket server to address");

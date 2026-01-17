@@ -85,8 +85,10 @@ void domain_socket::_openSocket(int& fd)
 {
     // create socket
     fd = ::socket(AF_UNIX,SOCK_STREAM,0);
-    if (fd == -1)
+    if (fd == -1) {
         throw domain_socket_error();
+    }
+
 }
 void domain_socket::_createClientSocket(socket*& socknew)
 {

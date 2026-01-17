@@ -12,6 +12,8 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <ncurses.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 using namespace rtypes;
 using namespace minecraft_controller;
 
@@ -49,7 +51,6 @@ struct session_state
     stringstream inputStream;
 
     // minecontrol protocol messages
-    crypt_session* pcrypto;
     minecontrol_message response;
     minecontrol_message_buffer request;
 
@@ -65,7 +66,6 @@ session_state::session_state()
 {
     psocket = NULL;
     paddress = NULL;
-    pcrypto = NULL;
     sessionControl = true;
     control = true;
 }
@@ -75,8 +75,6 @@ session_state::~session_state()
         delete psocket;
     if (paddress != NULL)
         delete paddress;
-    if (pcrypto != NULL)
-        delete pcrypto;
 }
 
 // signal handlers
@@ -106,6 +104,11 @@ static void any_command(const generic_string& command,session_state& session); /
 
 int main(int argc,const char* argv[])
 {
+    // initialize openssl
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+
     PROGRAM_NAME = argv[0];
     // attempt to setup SIGPIPE handler
     if (::signal(SIGPIPE,&sigpipe_handler) == SIG_ERR) {
@@ -143,6 +146,7 @@ int main(int argc,const char* argv[])
     if (top > 0) { // use network socket
         session.psocket = new network_socket;
         session.paddress = new network_socket_address(mainArgs[0],SERVICE_PORT);
+        session.paddress->setEncrypted(true);
     }
     else { // use domain socket
         session.psocket = new domain_socket;
@@ -417,18 +421,8 @@ bool hello_exchange(session_state& session)
             res.get_field_value_stream() >> session.serverName;
         else if (key == "version")
             res.get_field_value_stream() >> session.serverVersion;
-        else if (key == "encryptkey") {
-            // the server sent the public key (modulus and exponent)
-            str encryptKey;
-            res.get_field_value_stream() >> encryptKey;
-            try {
-                session.pcrypto = new crypt_session(encryptKey);
-            } catch (minecontrol_encrypt_error) {
-                return false;
-            }
-        }
     }
-    return session.serverName.length()>0 && session.serverVersion.length()>0 && session.pcrypto!=NULL;
+    return session.serverName.length()>0 && session.serverVersion.length()>0;
 }
 
 void login(session_state& session)
@@ -449,7 +443,7 @@ void login(session_state& session)
     // create request message
     session.request.begin("LOGIN");
     session.request.enqueue_field_name("Username");
-    session.request.enqueue_field_name("Password",session.pcrypto);
+    session.request.enqueue_field_name("Password");
     session.request << username << newline << password << flush;
     if ( request_response_sequence(session) )
         session.username = username;

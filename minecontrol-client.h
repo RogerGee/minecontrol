@@ -95,7 +95,6 @@ namespace minecraft_controller
         socket* sock;
         socket_stream connection;
         minecontrol_message_buffer msgbuf;
-        crypt_session crypto;
         pthread_t threadID;
         volatile bool threadCondition;
         user_info userInfo;

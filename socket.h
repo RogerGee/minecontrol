@@ -4,6 +4,12 @@
 #include <rlibrary/riodevice.h>
 #include <rlibrary/rstream.h>
 
+// Forward declare opaque openssl types.
+struct ssl_ctx_st;
+typedef struct ssl_ctx_st SSL_CTX;
+struct ssl_st;
+typedef struct ssl_st SSL;
+
 namespace minecraft_controller
 {
     /* represents the result of the accept
@@ -20,14 +26,24 @@ namespace minecraft_controller
     class socket_address
     {
     public:
+        socket_address(bool doEncryption = false);
         virtual ~socket_address();
 
         void assign(const char* address,const char* service = NULL)
         { _assignAddress(address,service); }
 
+        bool isEncrypted() const
+        { return _doEncryption; }
+
+        void setEncrypted(bool status)
+        { _doEncryption = status; }
+
         bool get_next_address(const void*& address,rtypes::size_type& structureSize) const
         { return _getNextAddress(address,structureSize); }
         const char* get_address_string() const;
+    protected:
+        bool _doEncryption;
+
     private:
         // virtual socket_address interface
         virtual void _assignAddress(const char* address,const char* service) = 0;
@@ -61,9 +77,21 @@ namespace minecraft_controller
         { return _id; }
         socket_family get_family() const
         { return _getFamily(); }
+    protected:
+        // Override read/write buffer interface for wrapping for OpenSSL.
+        virtual void _readBuffer(void* buffer,rtypes::size_type bytesToRead) const;
+        virtual void _readBuffer(const rtypes::io_resource* context,void* buffer,rtypes::size_type bytesToRead) const;
+        virtual void _writeBuffer(const void* buffer,rtypes::size_type length);
+        virtual void _writeBuffer(const rtypes::io_resource* context,const void* buffer,rtypes::size_type length);
+
     private:
         static rtypes::uint64 _idTop; // maintain count of connected clients
         rtypes::uint64 _id;
+        ::SSL_CTX* _sslCtx;
+        ::SSL* _ssl;
+
+        void _sslRead(void* buffer,rtypes::size_type bytesToRead) const;
+        void _sslWrite(const void* buffer,rtypes::size_type length);
 
         // implement virtual io_device interface
         virtual void _openEvent(const char*,rtypes::io_access_flag,rtypes::io_resource**,rtypes::io_resource**,void**,rtypes::uint32);

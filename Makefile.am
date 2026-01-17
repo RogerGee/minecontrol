@@ -10,5 +10,5 @@ minecontrold_SOURCES = domain-socket.cpp minecontrol-authority.cpp minecontrol-c
 minecontrol_SOURCES = minecontrol.cpp minecontrol-protocol.cpp mutex.cpp net-socket.cpp \
 	domain-socket.cpp socket.cpp
 
-minecontrol_LDADD = -lrlibrary -lcrypto -lncurses
-minecontrold_LDADD = -lrlibrary -lcrypto -lcrypt
+minecontrol_LDADD = -lrlibrary -lssl -lcrypto -lncurses
+minecontrold_LDADD = -lrlibrary -lssl -lcrypto -lcrypt

@@ -8,26 +8,6 @@
 namespace minecraft_controller
 {
     class minecontrol_message_error { };
-    class minecontrol_encrypt_error { }; // these should be handled
-
-    /* crypt_session
-     *  represents an RSA public-key encryptor/decryptor
-     */
-    class crypt_session
-    {
-    public:
-        crypt_session();
-        crypt_session(const rtypes::generic_string& publicKey);
-        ~crypt_session();
-
-        bool encrypt(const char* source,rtypes::generic_string& result) const;
-        bool decrypt(const char* source,rtypes::generic_string& result) const;
-        rtypes::str get_public_key() const;
-    private:
-        static const int _bits;
-        static const int _bytes;
-        void* _internal;
-    };
 
     /* minecontrol_message:
      *  represents a message used in implementing the simple
@@ -43,7 +23,7 @@ namespace minecraft_controller
         minecontrol_message(const char* command);
 
         void assign_command(const char* command);
-        void add_field(const char* field,const char* value,const crypt_session* pencrypt = NULL);
+        void add_field(const char* field,const char* value);
         void reset_fields();
 
         bool good() const
@@ -100,7 +80,7 @@ namespace minecraft_controller
         void begin(const char* command);
 
         // add a field name to be expected; these are queued
-        void enqueue_field_name(const char* fieldName,const crypt_session* encrypt = NULL);
+        void enqueue_field_name(const char* fieldName);
         void repeat_field(const char* fieldName);
 
         // retrieve the internal message that is being compiled
@@ -112,11 +92,10 @@ namespace minecraft_controller
         struct field_item
         {
             field_item() {}
-            field_item(const char* fieldName,const crypt_session* pencrypt)
-                : field(fieldName), encrypt(pencrypt) {}
+            field_item(const char* fieldName)
+                : field(fieldName) {}
 
             rtypes::str field;
-            const crypt_session* encrypt;
         };
 
         minecontrol_message _message;
