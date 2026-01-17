@@ -6,12 +6,15 @@
 #include <rlibrary/rstdio.h> // gets io_device
 #include <rlibrary/rstringstream.h>
 #include <rlibrary/rutility.h>
+#include <functional>
 #include <unistd.h>
 #include <pthread.h>
 #include <signal.h>
 #include <fcntl.h>
 #include <termios.h>
 #include <ncurses.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 using namespace rtypes;
@@ -102,12 +105,38 @@ static void console(session_state& session);
 static void stop(session_state& session);
 static void any_command(const generic_string& command,session_state& session); // these commands do not provide an interactive mode
 
+static void* console_output_thread(void* param)
+{
+    std::function<void()>* functor = reinterpret_cast<std::function<void()>*>(param);
+    (*functor)();
+    return nullptr;
+}
+
+static std::function<void(char*)> consoleRlLineFunctor;
+static void console_rl_line_callback(char* line)
+{
+    consoleRlLineFunctor(line);
+}
+
+static std::function<void(void)> consoleRlRedisplayFunctor;
+static void console_rl_redisplay_callback(void)
+{
+    consoleRlRedisplayFunctor();
+}
+
 int main(int argc,const char* argv[])
 {
     // initialize openssl
     SSL_library_init();
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
+
+    // initialize readline
+    rl_catch_signals = 0;
+    rl_catch_sigwinch = 0;
+    rl_deprep_term_function = nullptr;
+    rl_prep_term_function = nullptr;
+    rl_change_environment = false;
 
     PROGRAM_NAME = argv[0];
     // attempt to setup SIGPIPE handler
@@ -152,7 +181,7 @@ int main(int argc,const char* argv[])
         session.psocket = new domain_socket;
         session.paddress = new domain_socket_address(DOMAIN_NAME);
     }
-    
+
     // create socket and attempt to establish connection with minecontrol server
     session.psocket->open();
     if ( !session.psocket->connect(*session.paddress) ) {
@@ -168,8 +197,8 @@ int main(int argc,const char* argv[])
     }
 
     // greetings were received; connection is up
-    stdConsole << "Connection established: client '" 
-               << PROGRAM_NAME << '-' << PROGRAM_VERSION << "' ---> server '" 
+    stdConsole << "Connection established: client '"
+               << PROGRAM_NAME << '-' << PROGRAM_VERSION << "' ---> server '"
                << session.serverName << '-' << session.serverVersion << "'\n";
 
     // main message loop
@@ -215,7 +244,7 @@ bool check_long_option(const char* option,int& exitCode)
 {
     exitCode = 0;
     if ( rutil_strcmp(option,"help") ) {
-        stdConsole << "usage: " << PROGRAM_NAME << 
+        stdConsole << "usage: " << PROGRAM_NAME <<
 " [remote-host] [-p port|path] [--version] [--help]\n\
 \n\
 The following commands can be run interactively:\n\
@@ -564,63 +593,26 @@ void auth_ls(session_state& session)
     request_response_sequence(session);
 }
 
-static void* console_output_thread(void* pparam)
-{ // handle output for the thread
-    static const int BUFFER_MAX = 1024;
-    session_state& session = *reinterpret_cast<session_state*>(pparam);
-    socket_stream connectStream(session.connectStream); // create a new stream to prevent race conditions
-    minecontrol_message serverMessage;
-    str key, value;
-    while (true) {
-        connectStream >> serverMessage;
-        if ( !serverMessage.good() )
-            break; // this shouldn't happen under normal circumstances (and if it does a SIGPIPE probably will be sent)
-        if ( serverMessage.is_command("console-message") ) {
-            while ( read_next_response_field(serverMessage,key,value) ) {
-                if (key=="status" && value=="shutdown") {
-                    session.control = false;
-                    return NULL;
-                }
-                else if (key=="payload" && value.length()>0) {
-                    int y, x, cnt;
-                    chtype currentLine[BUFFER_MAX];
-                    session.mtx.lock();
-                    getyx(stdscr,y,x);
-                    move(0,0);
-                    cnt = inchnstr(currentLine,BUFFER_MAX);
-                    for (int i = 0;i < cnt;++i)
-                        addch(' ');
-                    scrl(-1);
-                    move(1,0);
-                    addstr(value.c_str());
-                    move(0,0);
-                    for (int i = 0;i < cnt;++i)
-                        addch(currentLine[i]);
-                    move(y,x);
-                    refresh();
-                    session.mtx.unlock();
-                }
-            }
-        }
-    }
-    session.control = false;
-    return NULL;
-}
 void console(session_state& session)
 {
     bool good;
     str key, value;
     pthread_t tid;
+    WINDOW* winCommand;
+    WINDOW* winSeparator;
+    WINDOW* winMessages;
+
     // get server id from user; first see if they specified it on the cmdline
     session.inputStream >> key;
     if (key.length() == 0) {
         stdConsole << "Enter ID of running server: ";
         stdConsole >> key;
     }
+
     // negotiate with the server for console mode
     session.request.begin("CONSOLE");
     session.request.enqueue_field_name("ServerID");
-    session.request << key << flush;    
+    session.request << key << flush;
     session.connectStream << session.request.get_message();
     session.connectStream >> session.response;
     if ( !rutil_strcmp(session.response.get_command(),"console-message") ) {
@@ -644,14 +636,65 @@ void console(session_state& session)
         errConsole << PROGRAM_NAME << ": server refused console mode" << endline;
         return;
     }
+
     // set up ncurses screen
     initscr();
-    scrollok(stdscr,TRUE);
-    nodelay(stdscr,TRUE);
-    keypad(stdscr,TRUE);
-    move(0,0);
-    refresh();
-    pthread_create(&tid,NULL,&console_output_thread,&session);
+    if (has_colors()) {
+        start_color();
+        use_default_colors();
+    }
+    winCommand = newwin(1,COLS,0,0);
+    winMessages = newwin(LINES - 1,COLS,1,0);
+    scrollok(winMessages,TRUE);
+    cbreak();
+    noecho();
+
+    // Set up console messages thread.
+    std::function<void()> console_thread_functor = [&session,&winMessages]() {
+        static const int BUFFER_MAX = 1024;
+
+        bool done = false;
+        str key, value;
+        minecontrol_message serverMessage;
+        socket_stream connectStream(session.connectStream); // create a new stream to prevent race conditions
+
+        while (!done) {
+            connectStream >> serverMessage;
+            if ( !serverMessage.good() ) {
+                // this shouldn't happen under normal circumstances (and if it
+                // does a SIGPIPE probably will be sent)
+                done = true;
+                break;
+            }
+
+            if ( serverMessage.is_command("console-message") ) {
+                while ( read_next_response_field(serverMessage,key,value) ) {
+                    if (key=="status" && value=="shutdown") {
+                        done = true;
+                        break;
+                    }
+
+                    if (key=="payload" && value.length()>0) {
+                        session.mtx.lock();
+                        wscrl(winMessages,-1);
+                        wmove(winMessages,0,0);
+                        waddstr(winMessages,value.c_str());
+                        wrefresh(winMessages);
+                        session.mtx.unlock();
+                        console_rl_redisplay_callback();
+                    }
+                }
+            }
+        }
+
+        session.control = false;
+    };
+    pthread_create(
+        &tid,
+        nullptr,
+        &console_output_thread,
+        &console_thread_functor);
+
     // get user command input; quit with 'quit'/'exit' command; use the session.mtx
     // mutex to synchronize access to the connect stream and the ncurses library calls
     str cache;
@@ -659,75 +702,95 @@ void console(session_state& session)
     minecontrol_message request("CONSOLE-COMMAND");
     static const int BUFFER_MAX = 1024;
     char buffer[BUFFER_MAX];
-    int top = 0;
-    session.control = true;
-    while (session.control) {
-        chtype ch;
-        session.mtx.lock();
-        if ((ch = getch()) == chtype(ERR)) {
-            /* sleeping here is of the utmost importance; it
-               gives the other thread a chance to catch up; we
-               must also be mindful of wasting CPU time when the
-               user is typing nothing; so, as a hack, I assume they
-               aren't really typing much if the buffer is empty */
-            session.mtx.unlock();
-            usleep(top==0 ? 50000 : 500);
-            continue;
+
+    // Create display function for readline to write to the command window.
+    consoleRlRedisplayFunctor = [&winCommand](void) {
+        werase(winCommand);
+        mvwprintw(winCommand,0,0,"%s%s",rl_display_prompt,rl_line_buffer);
+        wmove(winCommand,0,rutil_strlen(rl_display_prompt) + rl_point);
+        wrefresh(winCommand);
+    };
+    rl_redisplay_function = &console_rl_redisplay_callback;
+
+    // Create a handler for when readline sends us a line.
+    consoleRlLineFunctor = [&request,&session,&doCache,&cache,&winMessages](char* line) {
+        if (line == nullptr) {
+            return;
         }
-        if ((ch&A_CHARTEXT)=='\n' || top==BUFFER_MAX-1) {
-            // null terminate the buffer
-            buffer[top] = 0;
-            top = 0;
+
+        if (*line) {
+            add_history(line);
         }
-        else {
-            if (ch == KEY_BACKSPACE) {
-                delch();
-                if (top > 0)
-                    --top;
-            }
-            else
-                buffer[top++] = ch&A_CHARTEXT;
-            session.mtx.unlock();
-            continue;
-        }
-        move(0,0);
-        clrtoeol();
-        refresh();
-        session.mtx.unlock();
-        if (buffer[0] == 0)
-            continue;
-        if ( rutil_strcmp(buffer,"cache") )
+
+        if ( rutil_strcmp(line,"cache") ) {
             doCache = true;
-        else if ( rutil_strcmp(buffer,"release") ) {
+            session.mtx.lock();
+            wscrl(winMessages,-1);
+            wmove(winMessages,0,0);
+            waddstr(winMessages,"<<== (minecontrol client) Command cache is enabled; type 'release' to flush and disable");
+            wrefresh(winMessages);
+            session.mtx.unlock();
+        }
+        else if ( rutil_strcmp(line,"release") ) {
             size_type i;
             doCache = false;
             i = 0;
             while (cache[i]) {
                 request.add_field("ServerCommand",cache.c_str()+i);
-                while (cache[i])
+                while (cache[i]) {
                     ++i;
+                }
                 ++i;
             }
             session.connectStream << request;
             request.reset_fields();
             cache.clear();
+            session.mtx.lock();
+            wscrl(winMessages,-1);
+            wmove(winMessages,0,0);
+            waddstr(winMessages,"<<== (minecontrol client) Command cache has been flushed and disabled");
+            wrefresh(winMessages);
+            session.mtx.unlock();
         }
-        else if (rutil_strcmp(buffer,"quit") || rutil_strcmp(buffer,"exit"))
-            break;
-        if (doCache) {
-            cache += buffer;
+        else if (rutil_strcmp(line,"quit") || rutil_strcmp(line,"exit")) {
+            session.control = false;
+        }
+        else if (doCache) {
+            cache += line;
             cache.push_back(0);
-            continue;
         }
-        request.add_field("ServerCommand",buffer);
-        session.connectStream << request;
-        request.reset_fields();
+        else {
+            request.add_field("ServerCommand",line);
+            session.connectStream << request;
+            request.reset_fields();
+        }
+    };
+    rl_callback_handler_install("ServerConsole> ",&console_rl_line_callback);
+
+    console_rl_redisplay_callback();
+    session.control = true;
+    while (session.control) {
+        chtype ch;
+        ch = wgetch(winCommand);
+        if (ch == KEY_F(1)) {
+            session.control = false;
+        }
+        else {
+            rl_stuff_char(ch);
+            rl_callback_read_char();
+        }
     }
+
     session.request.begin("CONSOLE-QUIT");
-    session.connectStream << session.request.get_message();    
+    session.connectStream << session.request.get_message();
     pthread_join(tid,NULL);
+    rl_redisplay_function = nullptr;
+    rl_callback_handler_remove();
+
     // shutdown ncurses
-    erase();
+    delwin(winMessages);
+    delwin(winSeparator);
+    delwin(winCommand);
     endwin();
 }
 
