@@ -3,6 +3,7 @@
 #include "domain-socket.h"
 #include "net-socket.h"
 #include "mutex.h"
+#include <rlibrary/rlist.h>
 #include <rlibrary/rstdio.h> // gets io_device
 #include <rlibrary/rstringstream.h>
 #include <rlibrary/rutility.h>
@@ -86,7 +87,7 @@ static void sigpipe_handler(int); // handle SIGPIPE
 // helpers
 static bool check_long_option(const char* option,int& exitCode);
 static bool check_short_option(const char* option,const char* argument,int& exitCode);
-static void echo(bool onState);
+static void term_echo(bool onState);
 static bool check_status(io_device& device);
 static bool request_response_sequence(session_state& session);
 static bool print_response(minecontrol_message& response);
@@ -130,13 +131,6 @@ int main(int argc,const char* argv[])
     SSL_library_init();
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
-
-    // initialize readline
-    rl_catch_signals = 0;
-    rl_catch_sigwinch = 0;
-    rl_deprep_term_function = nullptr;
-    rl_prep_term_function = nullptr;
-    rl_change_environment = false;
 
     PROGRAM_NAME = argv[0];
     // attempt to setup SIGPIPE handler
@@ -200,21 +194,35 @@ int main(int argc,const char* argv[])
     stdConsole << "Connection established: client '"
                << PROGRAM_NAME << '-' << PROGRAM_VERSION << "' ---> server '"
                << session.serverName << '-' << session.serverVersion << "'\n";
+    stdConsole.flush_output();
 
     // main message loop
     while (session.sessionControl) {
         str command;
 
+        // stringstream prompt;
+        // if (session.username.length() > 0)
+        //     prompt << session.username << '@';
+        // prompt << session.serverName << '-' << session.serverVersion << PROMPT_MAIN << ' ';
+
+        // char* line = readline(prompt.get_device().c_str());
+        // if (line == nullptr) {
+        //     break;
+        // }
+        // if (!*line) {
+        //     continue;
+        // }
+        // add_history(line);
+
         if (session.username.length() > 0)
             stdConsole << session.username << '@';
         stdConsole << session.serverName << '-' << session.serverVersion << PROMPT_MAIN << ' ';
-        session.inputStream.close(); // close any last session
+        session.inputStream.clear();
         stdConsole.getline( session.inputStream.get_device() );
-        if (!stdConsole.get_input_success())
-            break;
-
+        //session.inputStream.get_device() = line;
         session.inputStream >> command;
         rutil_to_lower_ref(command);
+
         if (command == "login")
             login(session);
         else if (command == "logout")
@@ -227,8 +235,45 @@ int main(int argc,const char* argv[])
             exec(session);
         else if (command == "auth-ls")
             auth_ls(session);
-        else if (command == "console")
+        else if (command == "console") {
+            // list<str> history;
+            // for (HIST_ENTRY** ent = history_list();*ent != nullptr;++ent) {
+            //     history.push_back((*ent)->line);
+            // }
+            // clear_history();
+
+            auto save_rl_catch_signals = rl_catch_signals;
+            auto save_rl_catch_sigwinch = rl_catch_sigwinch;
+            auto save_rl_deprep_term_function = rl_deprep_term_function;
+            auto save_rl_prep_term_function = rl_prep_term_function;
+            auto save_rl_change_environment = rl_change_environment;
+
+            // rl_replace_line("",0);
+            // rl_reset_line_state();
+            // rl_cleanup_after_signal();
+
+            rl_catch_signals = false;
+            rl_catch_sigwinch = false;
+            rl_deprep_term_function = nullptr;
+            rl_prep_term_function = nullptr;
+            rl_change_environment = false;
+
             console(session);
+            clear_history();
+
+            rl_catch_signals = save_rl_catch_signals;
+            rl_catch_sigwinch = save_rl_catch_sigwinch;
+            rl_deprep_term_function = save_rl_deprep_term_function;
+            rl_prep_term_function = save_rl_prep_term_function;
+            rl_change_environment = save_rl_change_environment;
+
+            rl_replace_line("",0);
+            rl_reset_line_state();
+
+            // for (list<str>::iterator it = history.begin();it != history.end();++it) {
+            //     add_history(it->c_str());
+            // }
+        }
         else if (command == "stop")
             stop(session);
         else if (command == "quit")
@@ -296,7 +341,7 @@ void sigpipe_handler(int signal)
     _exit(SIGPIPE);
 }
 
-void echo(bool on)
+void term_echo(bool on)
 {
     // turn input echoing on or off
     int fd = ::open("/dev/tty",O_RDWR);
@@ -465,9 +510,9 @@ void login(session_state& session)
         stdConsole >> username;
     }
     stdConsole << "password: ";
-    echo(false);
+    term_echo(false);
     stdConsole.getline(password);
-    echo(true);
+    term_echo(true);
     stdConsole << endline; // move cursor down a row
     // create request message
     session.request.begin("LOGIN");
@@ -650,6 +695,8 @@ void console(session_state& session)
     scrollok(winMessages,TRUE);
     cbreak();
     noecho();
+    nonl();
+    intrflush(nullptr,false);
 
     // Set up console messages thread.
     std::function<void()> console_thread_functor = [&session,&winMessages]() {
@@ -682,8 +729,8 @@ void console(session_state& session)
                         wmove(winMessages,0,0);
                         waddstr(winMessages,value.c_str());
                         wrefresh(winMessages);
-                        console_rl_redisplay_callback();
                         session.mtx.unlock();
+                        console_rl_redisplay_callback();
                     }
                 }
             }
@@ -706,11 +753,13 @@ void console(session_state& session)
     char buffer[BUFFER_MAX];
 
     // Create display function for readline to write to the command window.
-    consoleRlRedisplayFunctor = [&winCommand](void) {
+    consoleRlRedisplayFunctor = [&winCommand,&session](void) {
+        session.mtx.lock();
         werase(winCommand);
         mvwprintw(winCommand,0,0,"%s%s",rl_display_prompt,rl_line_buffer);
         wmove(winCommand,0,rutil_strlen(rl_display_prompt) + rl_point);
         wrefresh(winCommand);
+        session.mtx.unlock();
     };
     rl_redisplay_function = &console_rl_redisplay_callback;
 
