@@ -598,9 +598,11 @@ void console(session_state& session)
     bool good;
     str key, value;
     pthread_t tid;
+    SCREEN* screen = set_term(nullptr);
     WINDOW* winCommand;
     WINDOW* winSeparator;
     WINDOW* winMessages;
+    set_term(screen);
 
     // get server id from user; first see if they specified it on the cmdline
     session.inputStream >> key;
@@ -680,8 +682,8 @@ void console(session_state& session)
                         wmove(winMessages,0,0);
                         waddstr(winMessages,value.c_str());
                         wrefresh(winMessages);
-                        session.mtx.unlock();
                         console_rl_redisplay_callback();
+                        session.mtx.unlock();
                     }
                 }
             }
@@ -784,7 +786,7 @@ void console(session_state& session)
     session.request.begin("CONSOLE-QUIT");
     session.connectStream << session.request.get_message();
     pthread_join(tid,NULL);
-    rl_redisplay_function = nullptr;
+    rl_redisplay_function = rl_redisplay;
     rl_callback_handler_remove();
 
     // shutdown ncurses
@@ -792,6 +794,9 @@ void console(session_state& session)
     delwin(winSeparator);
     delwin(winCommand);
     endwin();
+    delscreen(screen);
+    signal(SIGTSTP,SIG_DFL);
+    signal(SIGCONT,SIG_DFL);
 }
 
 void stop(session_state& session)
