@@ -82,6 +82,7 @@ The following dependencies are required to build:
 
     OpenSSL
     ncurses
+    readline
     rlibrary (see https://git.rserver.us/libs/rlibrary.git)
 
 --------------------------------------------------------------------------------
@@ -176,7 +177,7 @@ Several repositories exist that contain useful/fun authority programs:
 --------------------------------------------------------------------------------
 E. Desiderata
 
-Copyright 2014-2021 Roger Gee.  License GPLv3+: GNU GPL version 3 or later;
+Copyright (C) 2014-2026 Roger Gee.  License GPLv3+: GNU GPL version 3 or later;
   consult <http://gnu.org/licenses/gpl.html>.
 Minecontrol is free software: you are free to change and redistribute it.
 There is NO WARRANTY and NO SUPPORT to the extent permitted by law.

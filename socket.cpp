@@ -1,4 +1,6 @@
 #include "socket.h"
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <sys/socket.h>
@@ -10,6 +12,10 @@ using namespace minecraft_controller;
 
 // minecraft_controller::socket_address
 
+socket_address::socket_address(bool doEncryption)
+    : _doEncryption(doEncryption)
+{
+}
 socket_address::~socket_address()
 { // allow virtual destructors
 }
@@ -25,11 +31,17 @@ const char* socket_address::get_address_string() const
 
 /*static*/ uint64 socket::_idTop = 1;
 socket::socket()
-    : _id(0)
+    : _id(0), _sslCtx(nullptr), _ssl(nullptr)
 {
 }
 socket::~socket()
 { // allow for virtual destruction
+    if (_ssl) {
+        SSL_free(_ssl);
+    }
+    if (_sslCtx) {
+        SSL_CTX_free(_sslCtx);
+    }
 }
 minecraft_controller::socket& socket::operator =(const socket& obj)
 {
@@ -40,6 +52,34 @@ minecraft_controller::socket& socket::operator =(const socket& obj)
 bool socket::bind(const socket_address& address)
 {
     io_resource* pres = _getValidContext();
+
+    SSL_CTX* ctx = nullptr;
+    if (address.isEncrypted()) {
+        const SSL_METHOD* method = TLS_server_method();
+        ctx = SSL_CTX_new(method);
+        if (ctx == nullptr) {
+            ERR_print_errors_fp(stderr);
+            return false;
+        }
+
+        const char* val;
+        const char* keyFile = "key.pem";
+        const char* certFile = "cert.pem";
+        if ((val = getenv("MINECONTROL_KEY_FILE"))) {
+            certFile = val;
+        }
+        if ((val = getenv("MINECONTROL_CERTIFICATE_FILE"))) {
+            certFile = val;
+        }
+        if (SSL_CTX_use_certificate_file(ctx,certFile,SSL_FILETYPE_PEM) <= 0
+            || SSL_CTX_use_PrivateKey_file(ctx,keyFile,SSL_FILETYPE_PEM) <= 0)
+        {
+            ERR_print_errors_fp(stderr);
+            SSL_CTX_free(ctx);
+            return false;
+        }
+    }
+
     if (pres != NULL) {
         int fd = pres->interpret_as<int>();
         // attempt bind
@@ -49,14 +89,32 @@ bool socket::bind(const socket_address& address)
             bool cont = address.get_next_address(reinterpret_cast<const void*&>(addr),sz);
             if (addr!=NULL && ::bind(fd,addr,sz) == 0)
                 break;
-            if (!cont)
+            if (!cont) {
+                if (ctx != nullptr) {
+                    SSL_CTX_free(ctx);
+                }
                 return false;
+            }
         }
         // attempt to make the socket passive
-        if (::listen(fd,SOMAXCONN) == -1)
+        if (::listen(fd,SOMAXCONN) == -1) {
+            if (ctx != nullptr) {
+                SSL_CTX_free(ctx);
+            }
             return false;
+        }
+
+        if (address.isEncrypted()) {
+            _sslCtx = ctx;
+        }
+
         return true;
     }
+
+    if (ctx != nullptr) {
+        SSL_CTX_free(ctx);
+    }
+
     return false;
 }
 socket_accept_condition socket::accept(socket*& snew,str& fromAddress)
@@ -79,7 +137,7 @@ socket_accept_condition socket::accept(socket*& snew,str& fromAddress)
             output->assign(fd);
             // assign io contexts to device
             _createClientSocket(snew);
-            snew->close(); 
+            snew->close();
             snew->_assign(input,output);
             // release our reference to the handles
             --_ResourceRef(input);
@@ -88,6 +146,23 @@ socket_accept_condition socket::accept(socket*& snew,str& fromAddress)
             snew->_id = _idTop++;
             // get address of remote peer
             _addressBufferToString(fromAddress);
+
+            // Wrap connection in openssl ctx if we have one.
+            if (_sslCtx != nullptr) {
+                SSL* ssl = SSL_new(_sslCtx);
+                if (SSL_set_fd(ssl,fd) == 0) {
+                    ERR_print_errors_fp(stderr);
+                    SSL_free(ssl);
+                    throw socket_error();
+                }
+                if (SSL_accept(ssl) <= 0) {
+                    ERR_print_errors_fp(stderr);
+                    SSL_free(ssl);
+                    throw socket_error();
+                }
+                snew->_ssl = ssl;
+            }
+
             return socket_accepted;
         }
         else if (errno==EINTR || errno==ECONNABORTED || errno==EBADF || errno==EINVAL)
@@ -100,16 +175,53 @@ socket_accept_condition socket::accept(socket*& snew,str& fromAddress)
 bool socket::connect(const socket_address& address)
 {
     io_resource* pres = _getValidContext();
+
+    SSL_CTX* ctx = nullptr;
+    if (address.isEncrypted()) {
+        const SSL_METHOD* method = TLS_client_method();
+        ctx = SSL_CTX_new(method);
+        if (ctx == nullptr) {
+            ERR_print_errors_fp(stderr);
+            return false;
+        }
+    }
+
     // attempt connect on all available interfaces
     while (pres != NULL) {
         size_type sz;
         const sockaddr* addr;
+        int fd = pres->interpret_as<int>();
         bool cont = address.get_next_address(reinterpret_cast<const void*&>(addr),sz);
-        if (addr!=NULL && ::connect(pres->interpret_as<int>(),addr,sz) == 0)
+        if (addr!=NULL && ::connect(fd,addr,sz) == 0) {
+            if (address.isEncrypted()) {
+                int ret;
+                SSL* ssl = SSL_new(ctx);
+                if (SSL_set_fd(ssl,fd) == 0) {
+                    ERR_print_errors_fp(stderr);
+                    SSL_free(ssl);
+                    SSL_CTX_free(ctx);
+                    return false;
+                }
+                if ((ret = SSL_connect(ssl)) <= 0) {
+                    ERR_print_errors_fp(stderr);
+                    SSL_free(ssl);
+                    SSL_CTX_free(ctx);
+                    return false;
+                }
+                _sslCtx = ctx;
+                _ssl = ssl;
+            }
+
             return true;
+        }
         if (!cont)
             break;
     }
+
+    if (ctx != nullptr) {
+        SSL_CTX_free(ctx);
+    }
+
     return false;
 }
 bool socket::select(uint32 timeout)
@@ -135,12 +247,89 @@ bool socket::shutdown()
     io_resource* pres;
     pres = _getValidContext();
     if (pres != NULL) {
+        if (_ssl) {
+            SSL_shutdown(_ssl);
+        }
+
         // shutdown both reading and writing
         if (::shutdown(pres->interpret_as<int>(),SHUT_RDWR) == -1)
             return false;
         return true;
     }
     return false;
+}
+void socket::_readBuffer(void* buffer,size_type bytesToRead) const
+{
+    if (_ssl) {
+        _sslRead(buffer,bytesToRead);
+    }
+    else {
+        io_device::_readBuffer(buffer,bytesToRead);
+    }
+}
+void socket::_readBuffer(const io_resource* context,void* buffer,size_type bytesToRead) const
+{
+    if (_ssl) {
+        _sslRead(buffer,bytesToRead);
+    }
+    else {
+        io_device::_readBuffer(buffer,bytesToRead);
+    }
+}
+void socket::_writeBuffer(const void* buffer,size_type length)
+{
+    if (_ssl) {
+        _sslWrite(buffer,length);
+    }
+    else {
+        io_device::_writeBuffer(buffer,length);
+    }
+}
+void socket::_writeBuffer(const io_resource* context,const void* buffer,size_type length)
+{
+    if (_ssl) {
+        _sslWrite(buffer,length);
+    }
+    else {
+        io_device::_writeBuffer(context,buffer,length);
+    }
+}
+void socket::_sslRead(void* buffer,size_type bytesToRead) const
+{
+    int ret;
+    ret = SSL_read(_ssl,buffer,static_cast<int>(bytesToRead));
+    if (ret <= 0) {
+        int err = SSL_get_error(_ssl,ret);
+        if (err == SSL_ERROR_ZERO_RETURN) {
+            _lastOp = no_input;
+        }
+        else {
+            _lastOp = bad_read;
+        }
+        _byteCount = 0;
+    }
+    else {
+        _lastOp = success_read;
+        _byteCount = static_cast<size_type>(ret);
+    }
+}
+void socket::_sslWrite(const void* buffer,size_type length)
+{
+    int ret = SSL_write(_ssl,buffer,static_cast<int>(length));
+    if (ret <= 0) {
+        int err = SSL_get_error(_ssl,ret);
+        if (err == SSL_ERROR_ZERO_RETURN) {
+            _lastOp = no_input;
+        }
+        else {
+            _lastOp = bad_write;
+        }
+        _byteCount = 0;
+    }
+    else {
+        _lastOp = success_write;
+        _byteCount = static_cast<size_type>(ret);
+    }
 }
 void socket::_openEvent(const char*,rtypes::io_access_flag mode,rtypes::io_resource** pinput,rtypes::io_resource** poutput,void**,rtypes::uint32)
 {

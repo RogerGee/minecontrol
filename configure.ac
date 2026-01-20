@@ -18,9 +18,10 @@ AC_CHECK_LIB(pthread,pthread_create)
 dnl Search for these libraries but do not add them to LDFLAGS. They are added by
 dnl the Makefile later on to differentiate which binary gets what flags when getting
 dnl compiled.
-AC_CHECK_LIB(crypt,crypt,[echo Found crypt])
-AC_CHECK_LIB(crypto,RSA_generate_key_ex,[echo Found crypto])
-AC_CHECK_LIB(ncurses,initscr,[echo Found ncurses])
+AC_CHECK_LIB(crypt,crypt,[],[AC_MSG_ERROR([crypt library not found])])
+AC_CHECK_LIB(ssl,OPENSSL_init_ssl,[],[AC_MSG_ERROR([OpenSSL library not found])])
+AC_CHECK_LIB(ncurses,initscr,[],[AC_MSG_ERROR([ncurses library not found])])
+AC_CHECK_LIB(readline,rl_stuff_char,[],[AC_MSG_ERROR([readline library not found])])
 
 dnl Force c++11 flags.
 CXXFLAGS="$CXXFLAGS -std=c++11"

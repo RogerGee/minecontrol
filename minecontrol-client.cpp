@@ -185,7 +185,6 @@ bool controller_client::message_loop()
     outMessage.assign_command("GREETINGS");
     outMessage.add_field("Name",minecontrold::get_server_name());
     outMessage.add_field("Version",minecontrold::get_server_version());
-    outMessage.add_field("EncryptKey",crypto.get_public_key().c_str());
     connection << outMessage;
     while (threadCondition) {
         // get next message from client
@@ -285,14 +284,6 @@ bool controller_client::command_login(rstream& kstream,rstream& vstream) // hand
         client_log(minecontrold::standardLog) << "authentication failure: client didn't supply password" << endline;
         return false;
     }
-    // decrypt the password
-    str decryptedPassword;
-    if ( !crypto.decrypt(password.c_str(),decryptedPassword) ) {
-        prepare_error() << "Password decryption failed" << flush;
-        connection << msgbuf.get_message();
-        client_log(minecontrold::standardLog) << "authentication failure: client password could not be decrypted" << endline;
-        return false;
-    }
     // obtain user information
     passwd* pwd;
     pwd = getpwnam( username.c_str() );
@@ -313,7 +304,7 @@ bool controller_client::command_login(rstream& kstream,rstream& vstream) // hand
         return false;
     }
     pwd->pw_passwd = shadowPwd->sp_pwdp;
-    if ((pencrypt = ::crypt(decryptedPassword.c_str(),pwd->pw_passwd)) == NULL)
+    if ((pencrypt = ::crypt(password.c_str(),pwd->pw_passwd)) == NULL)
         throw controller_client_error();
     if ( !rutil_strcmp(pencrypt,pwd->pw_passwd) ) {
         prepare_error() << "Authentication failure: bad password for user '" << username << '\'' << flush;
